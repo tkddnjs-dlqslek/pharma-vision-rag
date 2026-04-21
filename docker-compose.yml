@@ -1,0 +1,48 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: pharma-rag-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # HTTP REST
+      - "6334:6334"   # gRPC (faster for multi-vector ops)
+    volumes:
+      - ./data/qdrant_storage:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
+      QDRANT__LOG_LEVEL: INFO
+
+  # ─── Langfuse (self-host, optional) ─────────────────────────────────────
+  # Default path: use Langfuse Cloud (set LANGFUSE_BASE_URL in .env).
+  # Uncomment below to self-host instead.
+  #
+  # langfuse-db:
+  #   image: postgres:16-alpine
+  #   container_name: pharma-rag-langfuse-db
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: langfuse
+  #     POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse}
+  #     POSTGRES_DB: langfuse
+  #   volumes:
+  #     - ./data/langfuse_db:/var/lib/postgresql/data
+  #
+  # langfuse:
+  #   image: langfuse/langfuse:2
+  #   container_name: pharma-rag-langfuse
+  #   depends_on: [langfuse-db]
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse}@langfuse-db:5432/langfuse
+  #     NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
+  #     SALT: ${LANGFUSE_SALT}
+  #     NEXTAUTH_URL: http://localhost:3000
+  #     TELEMETRY_ENABLED: "false"
+  #     LANGFUSE_INIT_ORG_ID: pharma-rag
+  #     LANGFUSE_INIT_PROJECT_ID: pharma-vision-rag
+
+networks:
+  default:
+    name: pharma-rag-net

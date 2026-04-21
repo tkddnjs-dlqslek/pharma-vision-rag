@@ -1,0 +1,54 @@
+# ─── Core RAG ───
+anthropic>=0.42.0              # Claude Sonnet 4.7 Vision + Haiku
+langgraph>=0.2.0               # Hybrid routing graph
+langchain-core>=0.3.0          # Required by langgraph
+langfuse>=2.50.0               # Observability (trace 4 modes)
+
+# ─── Retrieval & embeddings ───
+qdrant-client>=1.12.0          # Vector DB client (multi-vector support)
+sentence-transformers>=3.3.0   # BGE-M3 loading
+FlagEmbedding>=1.3.0           # BGE-M3 official wrapper
+transformers>=4.46.0           # Nemotron ColEmbed V2 + reranker
+torch>=2.3.0                   # Let Colab pick CUDA-matching wheel
+accelerate>=1.0.0              # HF model loading helpers
+einops>=0.8.0                  # Nemotron attention ops
+
+# ─── Document processing ───
+docling>=2.20.0                # IBM layout + table + OCR
+pdf2image>=1.17.0              # Page → image (Vision retriever input)
+pypdfium2>=4.30.0              # pdf2image backend (no poppler needed on Windows)
+Pillow>=10.4.0                 # Image handling
+pypdf>=5.1.0                   # Page counting, metadata
+
+# ─── Evaluation ───
+pandas>=2.2.0                  # CSV tables
+numpy>=1.26.0
+scipy>=1.14.0                  # Paired bootstrap CIs
+scikit-learn>=1.5.0            # NDCG, classification helpers
+
+# ─── Visualization ───
+matplotlib>=3.9.0
+plotly>=5.24.0
+seaborn>=0.13.0
+
+# ─── API + UI ───
+fastapi>=0.115.0               # Colab Nemotron tunnel + internal API
+uvicorn>=0.32.0
+gradio>=5.7.0                  # Demo, batch dashboard, page viewer
+python-multipart>=0.0.12       # Gradio file upload
+
+# ─── Utilities ───
+python-dotenv>=1.0.1           # .env loading
+pydantic>=2.9.0                # Schema validation
+rich>=13.9.0                   # Pretty console output
+tqdm>=4.67.0                   # Progress bars
+httpx>=0.27.0                  # Async HTTP (Colab tunnel client)
+
+# ─── Dev / test ───
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+ruff>=0.7.0
+
+# ─── Korean text (BGE-M3 is multilingual but tokenizers sometimes need extras) ───
+# sentencepiece is required by many HF tokenizers
+sentencepiece>=0.2.0

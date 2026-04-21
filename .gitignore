@@ -1,0 +1,74 @@
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Virtual environments ───
+venv/
+.venv/
+env/
+ENV/
+
+# ─── Jupyter / Colab ───
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ─── Model weights (large, don't commit) ───
+models/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.gguf
+*.ckpt
+
+# ─── Data ───
+# Raw Sanofi PDFs: licensing may allow local use but not redistribution.
+# Commit only a /data/samples/ subfolder with explicit public-domain docs.
+data/pdf/
+data/images/
+data/embeddings/
+data/qdrant_storage/
+!data/samples/
+
+# ─── Evaluation outputs ───
+eval/results/
+*.csv
+!eval/questions.jsonl
+
+# ─── Secrets / config ───
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets/
+
+# ─── Qdrant / Langfuse / Docker volumes ───
+qdrant_storage/
+langfuse_storage/
+postgres_data/
+
+# ─── Logs ───
+*.log
+logs/
+langfuse_traces/
+
+# ─── OS / IDE ───
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# ─── Misc ───
+.cache/
+tmp/
+scratch/
