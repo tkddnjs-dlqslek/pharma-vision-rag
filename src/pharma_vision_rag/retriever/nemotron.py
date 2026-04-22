@@ -107,13 +107,23 @@ class NemotronVisionRetriever:
         qdrant_url: str,
         qdrant_api_key: str | None = None,
         collection: str = DEFAULT_COLLECTION,
+        grpc_port: int = 6336,
     ) -> None:
         self.client = embedding_client
         self.collection = collection
+        # Use gRPC for multi-vector traffic — JSON over REST balloons a single
+        # page from ~14 MB binary to ~100 MB and exceeds Qdrant's default cap.
+        # gRPC is binary, no inflation, and our docker-compose maps host 6336
+        # -> container 6334.
+        from urllib.parse import urlparse
+        host = urlparse(qdrant_url).hostname or "localhost"
         self.qdrant = QdrantClient(
-            url=qdrant_url,
+            host=host,
+            grpc_port=grpc_port,
+            prefer_grpc=True,
             api_key=qdrant_api_key or None,
             check_compatibility=False,
+            timeout=120,
         )
 
     def ensure_collection(self) -> None:
@@ -142,8 +152,20 @@ class NemotronVisionRetriever:
         )
         return {"source": source, "page": page, "n_patches": int(emb.shape[0]), "dim": int(emb.shape[1])}
 
-    def index_pdf(self, pdf_path: str | Path, source: str | None = None) -> dict[str, Any]:
-        """Render every page of ``pdf_path`` and index each as a multi-vector point."""
+    def index_pdf(
+        self,
+        pdf_path: str | Path,
+        source: str | None = None,
+        render_scale: float = 0.85,
+    ) -> dict[str, Any]:
+        """Render every page of ``pdf_path`` and index each as a multi-vector point.
+
+        ``render_scale`` controls patch count quadratically. Lower scales reduce
+        response size over the Colab tunnel: at scale 1.5 a single page can
+        produce a ~100 MB JSON response that Cloudflare Quick Tunnels reject
+        with 502. 0.85 keeps it under ~30 MB while preserving most retrieval
+        signal.
+        """
         from pharma_vision_rag.utils.pdf import iter_pages
 
         pdf_path = Path(pdf_path)
@@ -151,7 +173,7 @@ class NemotronVisionRetriever:
         self.ensure_collection()
 
         per_page = []
-        for page_num, img in iter_pages(pdf_path):
+        for page_num, img in iter_pages(pdf_path, scale=render_scale):
             stats = self.index_page(img, source=source, page=page_num)
             per_page.append(stats)
             log.info("Indexed %s p%d (n_patches=%d)", source, page_num, stats["n_patches"])

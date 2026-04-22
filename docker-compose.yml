@@ -12,8 +12,10 @@ services:
       - ./data/qdrant_storage:/qdrant/storage
     environment:
       QDRANT__LOG_LEVEL: INFO
+      # Note: do NOT set QDRANT__SERVICE__MAX_REQUEST_SIZE_MB on v1.12.4 —
+      # it silently breaks actix workers. Use gRPC (port 6334) for large
+      # multi-vector upserts instead; REST is fine for small queries.
       # QDRANT__SERVICE__API_KEY intentionally unset for local dev (no auth needed).
-      # For production/cloud deployments, add QDRANT_API_KEY in .env and re-enable.
 
   # ─── Langfuse (self-host, optional) ─────────────────────────────────────
   # Default path: use Langfuse Cloud (set LANGFUSE_BASE_URL in .env).

@@ -46,12 +46,20 @@ class DoclingTextRetriever:
         qdrant_api_key: str | None = None,
         collection: str = DEFAULT_COLLECTION,
         embed_model: str = DEFAULT_EMBED_MODEL,
+        grpc_port: int = 6336,
     ) -> None:
         self.collection = collection
+        # Prefer gRPC for consistency with the multi-vector path and to avoid
+        # REST workers getting stuck under load.
+        from urllib.parse import urlparse
+        host = urlparse(qdrant_url).hostname or "localhost"
         self.client = QdrantClient(
-            url=qdrant_url,
+            host=host,
+            grpc_port=grpc_port,
+            prefer_grpc=True,
             api_key=qdrant_api_key or None,
             check_compatibility=False,
+            timeout=60,
         )
         log.info("Loading embedding model %s (~2.3 GB on first run)", embed_model)
         self.embedder = SentenceTransformer(embed_model)

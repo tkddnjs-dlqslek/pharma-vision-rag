@@ -66,9 +66,19 @@ class CaptionIndexer:
         embed_model: str = DEFAULT_EMBED_MODEL,
         anthropic_client: anthropic.Anthropic | None = None,
         caption_model: str = DEFAULT_CAPTION_MODEL,
+        grpc_port: int = 6336,
     ) -> None:
         self.collection = collection
-        self.qdrant = QdrantClient(url=qdrant_url, api_key=qdrant_api_key or None, check_compatibility=False)
+        from urllib.parse import urlparse
+        host = urlparse(qdrant_url).hostname or "localhost"
+        self.qdrant = QdrantClient(
+            host=host,
+            grpc_port=grpc_port,
+            prefer_grpc=True,
+            api_key=qdrant_api_key or None,
+            check_compatibility=False,
+            timeout=60,
+        )
         self.embedder = SentenceTransformer(embed_model)
         self.anthropic = anthropic_client or anthropic.Anthropic()
         self.caption_model = caption_model
@@ -165,9 +175,19 @@ class CaptionRetriever:
         qdrant_api_key: str | None = None,
         collection: str = DEFAULT_COLLECTION,
         embed_model: str = DEFAULT_EMBED_MODEL,
+        grpc_port: int = 6336,
     ) -> None:
         self.collection = collection
-        self.qdrant = QdrantClient(url=qdrant_url, api_key=qdrant_api_key or None, check_compatibility=False)
+        from urllib.parse import urlparse
+        host = urlparse(qdrant_url).hostname or "localhost"
+        self.qdrant = QdrantClient(
+            host=host,
+            grpc_port=grpc_port,
+            prefer_grpc=True,
+            api_key=qdrant_api_key or None,
+            check_compatibility=False,
+            timeout=60,
+        )
         self.embedder = SentenceTransformer(embed_model)
 
     def search(self, query: str, k: int = 5) -> list[dict[str, Any]]:
