@@ -204,13 +204,17 @@ PRD §7 중 실제 발생 가능성이 높은 것:
 - [x] VARAG 레포 참고용 clone (`c:/Users/user/Desktop/VARAG-ref/`)
 - [x] VARAG 코드 리뷰 + `docs/VARAG_REVIEW.md` 작성
 - [x] `generator/claude_vision.py` — Claude Sonnet 4.6 Vision + 프롬프트 캐싱 검증 (tag: phase-1-generator)
+- [x] `generator/claude_text.py` — Claude Haiku 4.5 (translation, HyDE 드래프트)
 - [x] `utils/pdf.py` — pypdfium2 기반 렌더 헬퍼 (Windows-friendly, no Poppler)
-- [x] `retriever/docling_text.py` — Docling + BGE-M3 + Qdrant 인덱서·검색기
+- [x] `retriever/docling_text.py` — Docling + BGE-M3 + Qdrant 인덱서·검색기 (tag: phase-1-text-retriever)
+- [x] `retriever/text_baseline.py` / `text_qt.py` / `text_hyde.py` — Text 경로 3버전 (tag: phase-1-text-variants)
+- [x] `rerank/zerank2.py` — BGE-reranker-v2-m3 cross-encoder (PRD의 "ZeRank2" 라벨 매핑)
+- [x] `modes/text_only.py` — 첫 모드 + Langfuse @observe 통합
 
-**남음**:
-- [ ] `retriever/text_baseline.py` / `text_qt.py` / `text_hyde.py` — Text 경로 3버전 (baseline은 docling_text 얇은 래퍼)
+**남음 (Colab 의존)**:
 - [ ] `retriever/nemotron.py` — Colab tunnel client (FastAPI + pypdfium2)
-- [ ] `rerank/{zerank2,nemotron_rerank}.py` — 2종 A/B
-- [ ] `modes/{text_only,vision_only,caption,hybrid}.py` + `router/langgraph.py`
-- [ ] Langfuse trace 연동 확인
-- [ ] 샘플 질문 3개 smoke test — 4 모드 모두 답변 + Langfuse trace 12개 확인
+- [ ] `rerank/nemotron_rerank.py` — `llama-nemotron-rerank-vl-1b-v2` (Colab 노트북에 엔드포인트 추가)
+- [ ] `modes/vision_only.py` — Nemotron retriever + Claude Vision (페이지 이미지)
+- [ ] `modes/caption.py` — Haiku 캡션 → BGE-M3 인덱싱 → 텍스트 검색 → Sonnet
+- [ ] `modes/hybrid.py` + `router/langgraph.py` — text + vision 라우팅 + 리랭크 합병
+- [ ] 4-mode × 3-query smoke test — Langfuse에 12 trace 확인
