@@ -179,24 +179,33 @@ PRD §7 중 실제 발생 가능성이 높은 것:
 
 ---
 
-## 5. Phase 0 진행 상황 (2026-04-21)
+## 5. Phase 0 완료 상태 (2026-04-22)
 
-**완료**:
-- [x] 디렉토리 구조 + `.gitkeep`
-- [x] `.gitignore`
-- [x] GitHub 레포 + git 원격 연결
-- [x] Sanofi PDF 4개 수집
+**전부 완료**:
+- [x] 디렉토리 구조 + `.gitkeep` + `.gitignore`
+- [x] GitHub 레포 + git (커밋 `phase-0-scaffold`)
+- [x] Sanofi PDF 4개 수집 (`data/pdf/`)
+- [x] `README.md`, `requirements.txt`, `docker-compose.yml`, `.env.example`
+- [x] `.env` 로컬 키 6개 설정 (Anthropic, HF, Langfuse US, Qdrant 포트 6335)
+- [x] **Colab Nemotron smoke test 통과** — T4 + 3B-v2 + bf16 + float-only cast. 임베딩 shape `[N, 3072]`, MaxSim 12.88
+- [x] **로컬 Qdrant 기동** (docker-compose, 포트 6335로 분리) + single/multi-vector 연결 smoke test
+- [x] **로컬 Docling smoke test** (`scripts/00_docling_smoke.py`) — Q1.pdf 23페이지 → 306 text + 19 table + 2 picture 추출. 첫 표가 마크다운 구조 보존.
+- [x] `scripts/01_qdrant_smoke.py` — 단일/멀티벡터 컬렉션 생성·검색·삭제 검증
 
-**생성 중** (이번 배치):
-- [ ] `README.md` 스켈레톤 (Phase 4에서 한·영 병기 본편)
-- [ ] `requirements.txt`
-- [ ] `docker-compose.yml` (Qdrant 기본, Langfuse는 cloud 사용)
-- [ ] `.env.example`
-- [ ] `notebooks/01_nemotron_smoke_test.ipynb` — Colab용 Nemotron 임베딩 smoke test
+**Phase 0 산출물 총평**:
+- ✅ 4-mode 비교 구조의 **모든 컴포넌트가 각자 smoke test 통과** (Docling, Qdrant multi-vector, Nemotron ColEmbed V2)
+- ✅ `.gitignore`로 시크릿·모델·PDF 차단. 리포지토리는 공개 가능 상태
+- ⚠️ 로컬 Docling은 일부 페이지에서 CPU RAM 한계로 `std::bad_alloc` — Phase 1에서 페이지별 배치 처리로 우회
+- ⚠️ Colab Pro 컴퓨트 유닛 이번 달 소진 → 다음 달 재충전 시점까지 T4 무료 티어 or Kaggle 대기
 
-**다음**:
-- [ ] VARAG 레포 fork 또는 참고용 clone
-- [ ] Colab 세션에서 notebook 실행 → Nemotron 로딩·임베딩 shape 확인
-- [ ] Docling 로컬 설치 → 샘플 PDF 추출 확인
-- [ ] Qdrant 컨테이너 기동 + 연결 테스트
-- [ ] 초기 커밋 + `phase-0-done` 태그
+## 6. Phase 1 착수 준비 (다음 세션)
+
+- [ ] VARAG 레포 참고용 clone (`/c/Users/user/Desktop/VARAG/`)
+- [ ] VARAG 코드 리뷰 + `VARAG_REVIEW.md` 작성
+- [ ] `retriever/nemotron.py` — Colab tunnel client (FastAPI + pypdfium2)
+- [ ] `retriever/docling_text.py` — Docling block → BGE-M3 임베딩 → Qdrant 업서트
+- [ ] `retriever/text_baseline.py` / `text_qt.py` / `text_hyde.py` — Text 경로 3버전
+- [ ] `rerank/` — ZeRank2 + Nemotron rerank 2종
+- [ ] `generator/claude_vision.py` — Claude Sonnet 4.7 Vision
+- [ ] `modes/{text_only,vision_only,caption,hybrid}.py`
+- [ ] Langfuse trace 연동 확인
