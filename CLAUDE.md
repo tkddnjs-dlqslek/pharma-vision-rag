@@ -59,8 +59,10 @@ src/pharma_vision_rag/
   utils/pdf.py pypdfium2 렌더 헬퍼 (render_page, iter_pages, page_count)
 scripts/00~10  단계별 smoke/index 스크립트 (번호 순서 = 의존 순서)
 notebooks/     01 Nemotron smoke, 02 Colab FastAPI 터널 (현재 인덱싱 경로)
-docs/          VARAG_REVIEW.md, EXPERIMENT_PLAN.md
-data/pdf/      원본 PDF — gitignore. 파일명 고정: Q1.pdf, Q2.pdf, Q3.pdf, "Form 20-F 2025 (Oct 2025).pdf"
+docs/          VARAG_REVIEW.md, EXPERIMENT_PLAN.md, CORPUS.md (코퍼스 발췌 근거·페이지 매핑)
+data/pdf/      원본 PDF — gitignore. 원본 파일명 고정: Q1.pdf, Q2.pdf, Q3.pdf, "Form 20-F 2025 (Oct 2025).pdf",
+               raw/Q{1,2,3}_deck_full.pdf. 인덱싱 코퍼스 7파일(172p): Q1~Q3.pdf, 20F_extract.pdf, Q{1,2,3}_deck.pdf
+               (발췌본은 scripts/11_build_extracts.py로 생성. gold_pages는 발췌 후 페이지 번호)
 ```
 
 ## 로컬 실행 규칙

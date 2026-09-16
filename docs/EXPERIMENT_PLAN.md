@@ -18,26 +18,38 @@
 
 ## 2. 데이터 — 4개 층
 
-### 2.1 원본 PDF (`data/pdf/`, gitignore) — ✅ 확보됨 (Sangwon 로컬)
+### 2.1 원본 PDF (`data/pdf/`, gitignore) — ✅ 확보됨 (2026-09-16 재다운로드, `docs/CORPUS.md` §5 URL)
 
 | 파일명 (정확히) | 페이지 | 출처 |
 |---|---|---|
 | `Q1.pdf` | 23 | Sanofi IR · Q1 2025 Press Release |
 | `Q2.pdf` | 26 | Sanofi IR · Q2 2025 Press Release |
 | `Q3.pdf` | 28 | Sanofi IR · Q3 2025 Press Release |
-| `Form 20-F 2025 (Oct 2025).pdf` | 300 | SEC EDGAR · Form 20-F (FY2025, Jan–Dec) |
+| `Form 20-F 2025 (Oct 2025).pdf` | 300 | Sanofi IR · Form 20-F (FY2025, Jan–Dec) |
+| `raw/Q1_deck_full.pdf` | 41 | Sanofi IR · Q1 2025 Results Presentation (**09-16 추가**) |
+| `raw/Q2_deck_full.pdf` | 41 | Sanofi IR · Q2 2025 Results Presentation (**09-16 추가**) |
+| `raw/Q3_deck_full.pdf` | 43 | Sanofi IR · Q3 2025 Results Presentation (**09-16 추가**) |
 
-### 2.2 파생 데이터 — ❌
+**덱 추가 사유 (09-16)**: 보도자료와 20-F 전 페이지 렌더 확인 결과 **차트 0개**(표와 텍스트만). A유형(차트) 10문항과
+"차트·표 밀집" 전제가 성립하지 않아 같은 IR 페이지의 실적 발표 슬라이드에서 차트 페이지만 발췌해 추가. 상세 `docs/CORPUS.md` §1.
+
+### 2.2 파생 데이터 — 🔶 발췌본 완료, 인벤토리 미착수
 
 | 항목 | 요건 | 산출물 |
 |---|---|---|
-| **20-F 발췌본** | 300p 중 **50p** (80p 아님 — 인덱싱 비용만 늘고 통계력은 안 늘어남). 재무제표·파이프라인 표와 서술 섹션을 **섞어서** 뽑고 선정 기준을 문서화. 한쪽으로 치우치면 특정 모드에 유리해짐 | `data/pdf/20F_extract.pdf` + `docs/CORPUS.md`(발췌 페이지 범위·근거) |
-| **페이지 인벤토리** | 코퍼스 전 페이지(~127p)에 주 콘텐츠 유형 태깅: `chart` / `table` / `text` / `mixed`. 질문 유형 분포를 맞추고 gold_page를 검증하는 기준 | `eval/page_inventory.csv` (source, page, block_type, note) |
+| **20-F 발췌본** ✅ | 300p 중 **50p** (서술 14 / 혼합 8 / 표 28). 재무제표·파이프라인 표와 서술 섹션을 섞어 특정 모드에 유리하지 않게 | `data/pdf/20F_extract.pdf` + `docs/CORPUS.md` §2 |
+| **덱 발췌본** ✅ | 덱당 15p, 차트 주 콘텐츠 페이지 + 요약 표 3~4장. 표지·사진·약어표 제외 | `data/pdf/Q{1,2,3}_deck.pdf` + `docs/CORPUS.md` §3 |
+| **페이지 인벤토리** ❌ | 코퍼스 전 페이지(172p)에 주 콘텐츠 유형 태깅: `chart` / `table` / `text` / `mixed`. 질문 유형 분포를 맞추고 gold_page를 검증하는 기준 | `eval/page_inventory.csv` (source, page, block_type, note) |
 
-최종 코퍼스 ≈ 23 + 26 + 28 + 50 = **127페이지**. 참고 벤치마크(ViDoRe task당 수백~1,000p, FinanceBench 150문항)
-대비 작은 편이지만 "파일럿 벤치마크"로 방어 가능. **더 늘리지 않는다.**
+빌드: `scripts/11_build_extracts.py` (페이지 목록 상수, idempotent).
 
-### 2.3 인덱스 (3 컬렉션 × 4 파일) — 🔶 12칸 중 1칸
+최종 코퍼스 = 23 + 26 + 28 + 50 + 15 × 3 = **172페이지** (7파일). 참고 벤치마크(ViDoRe task당 수백~1,000p,
+FinanceBench 150문항) 대비 작은 편이지만 "파일럿 벤치마크"로 방어 가능. **여기서 더 늘리지 않는다.**
+
+**정답 중복 규칙**: 덱 차트 수치가 같은 분기 보도자료 표에도 있으면 text_only가 그 페이지로 맞혀 A유형 검증이 무효.
+A유형은 보도자료 텍스트에 없는 수치(세그먼트, 브릿지 항목, 추세)만 출제하고, `gold_pages`에 정답이 있는 페이지를 전부 기록. `docs/CORPUS.md` §4.
+
+### 2.3 인덱스 (3 컬렉션 × 7 파일) — 🔶 21칸 중 1칸
 
 | | Q1 | Q2 | Q3 | 20-F 발췌 |
 |---|---|---|---|---|
@@ -100,13 +112,13 @@
 
 **문제**: 현재 `retriever/nemotron.py`는 Colab FastAPI 터널에 페이지 이미지를 보내고 `[N_patches, 3072]`
 임베딩(~14MB/페이지)을 받아온다. Cloudflare 무료 터널이 30MB에서 502를 내고 throughput이 페이지당
-~3분이라 127p 인덱싱이 사실상 불가능하다.
+~3분이라 172p 인덱싱이 사실상 불가능하다.
 
 **해법**: 임베딩을 인터넷으로 왕복시키지 않는다.
 
 1. `notebooks/03_nemotron_batch_index.ipynb` — Colab에서 PDF 4개를 업로드/마운트 → 전 페이지
    `render_scale=1.5`로 렌더 → Nemotron 3B `forward_images` 배치 → 페이지당 fp16 배열을
-   `{source}_{page}.npy`로 저장 → `embeddings.zip` 하나로 다운로드. (예상: 페이지당 ~5초 → 127p ≈ 10분)
+   `{source}_{page}.npy`로 저장 → `embeddings.zip` 하나로 다운로드. (예상: 페이지당 ~5초 → 172p ≈ 15분)
 2. `scripts/11_load_nemotron_npz.py` — zip 해제 → `NemotronVisionRetriever.qdrant.upsert` (gRPC)로 로컬 업서트.
    포인트 ID는 기존 `_page_id(source, page)` 재사용 → idempotent.
 3. 쿼리 시점 임베딩(`embed_query`)은 여전히 Colab 터널이 필요 (질문 60개 × 텍스트라 가벼움).
@@ -119,11 +131,11 @@
 
 | 순서 | 작업 | 환경 | 산출물 |
 |---|---|---|---|
-| 1 | 20-F 300p 페이지 유형 스캔 → 발췌 50p 확정 | 로컬 (pypdfium2 렌더 + Claude 확인) | `data/pdf/20F_extract.pdf`, `docs/CORPUS.md` |
-| 2 | 코퍼스 127p 페이지 인벤토리 | 로컬 | `eval/page_inventory.csv` |
+| 1 ✅ | 20-F 300p + 덱 3개 페이지 유형 스캔 → 발췌 50p + 15p × 3 확정 | 로컬 (pypdfium2 렌더 + Claude 확인) | `scripts/11_build_extracts.py`, `data/pdf/20F_extract.pdf`, `Q{n}_deck.pdf`, `docs/CORPUS.md` |
+| 2 | 코퍼스 172p 페이지 인벤토리 | 로컬 | `eval/page_inventory.csv` |
 | 3 | 질문 30 × 2 작성 + 레이블 + 검증 스크립트 | 로컬 | `eval/questions.jsonl`, `scripts/12_validate_questions.py` |
-| 4 | Colab 배치 인덱싱 노트북 + npz 로더 | Colab + 로컬 | `notebooks/03_*.ipynb`, `scripts/11_*.py` |
-| 5 | 텍스트·캡션 인덱스 4파일 전부 (Docling bad_alloc 페이지 배치 재처리 포함) | 로컬 (+API) | Qdrant 3컬렉션 채움 |
+| 4 | Colab 배치 인덱싱 노트북 + npz 로더 | Colab + 로컬 | `notebooks/03_*.ipynb`, `scripts/13_load_nemotron_npz.py` |
+| 5 | 텍스트·캡션 인덱스 7파일 전부 (Docling bad_alloc 페이지 배치 재처리 포함) | 로컬 (+API) | Qdrant 3컬렉션 채움 |
 | 6 | `eval/metrics.py`(Recall@k, NDCG@k, 정답 일치 judge) + `eval/runner.py` | 로컬 | `python -m pharma_vision_rag.eval.runner --mode all` → CSV |
 | 7 | E1·E2 실행 (검색 1회 → 생성 3회) | 로컬 (+API) | `eval/results/*.csv` (gitignore) |
 | 8 | E3 재집계 + 그래프 + 실패 케이스 10개 정성 분석 | 로컬 | `docs/REPORT.md` |
