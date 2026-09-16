@@ -1,4 +1,7 @@
-"""One-time indexing — push every page of given PDF(s) through the Colab
+"""DEPRECATED (Phase 2): use notebooks/03_nemotron_batch_index.ipynb + scripts/13_load_nemotron_npz.py.
+Tunnel path kept only as fallback.
+
+One-time indexing — push every page of given PDF(s) through the Colab
 Nemotron tunnel and upsert their multi-vector embeddings into Qdrant.
 
 Usage:
