@@ -119,7 +119,7 @@ A유형은 보도자료 텍스트에 없는 수치(세그먼트, 브릿지 항�
 1. `notebooks/03_nemotron_batch_index.ipynb` — Colab에서 PDF 4개를 업로드/마운트 → 전 페이지
    `render_scale=1.5`로 렌더 → Nemotron 3B `forward_images` 배치 → 페이지당 fp16 배열을
    `{source}_{page}.npy`로 저장 → `embeddings.zip` 하나로 다운로드. (예상: 페이지당 ~5초 → 172p ≈ 15분)
-2. `scripts/11_load_nemotron_npz.py` — zip 해제 → `NemotronVisionRetriever.qdrant.upsert` (gRPC)로 로컬 업서트.
+2. `scripts/13_load_nemotron_npz.py` — zip 해제 → `NemotronVisionRetriever.qdrant.upsert` (gRPC)로 로컬 업서트.
    포인트 ID는 기존 `_page_id(source, page)` 재사용 → idempotent.
 3. 쿼리 시점 임베딩(`embed_query`)은 여전히 Colab 터널이 필요 (질문 60개 × 텍스트라 가벼움).
    벤치마크 실행 전에 **60개 질문의 쿼리 임베딩도 같은 노트북에서 미리 뽑아 `.npz`로 받아두면** 벤치마크
@@ -156,7 +156,7 @@ A유형은 보도자료 텍스트에 없는 수치(세그먼트, 브릿지 항�
 
 ## 7. 미결 사항
 
-- [ ] 20-F 발췌 50p의 구체 페이지 범위 (순서 1에서 확정)
+- [x] 20-F 발췌 50p의 구체 페이지 범위 → `docs/CORPUS.md` §2 (2026-09-16 확정)
 - [ ] 리랭커를 E1 hybrid에 기본 포함할지 (Phase 1에서는 text_only에만 붙어 있음)
 - [ ] 예산 초과 시 3회 반복을 KR 30문항으로 한정할지
 - [ ] 임상 유형(C) 질문 5개가 20-F 서술부만으로 충분한지 → 부족하면 Dupilumab PMC 논문 1편 추가 (plan.md 보류 항목)
