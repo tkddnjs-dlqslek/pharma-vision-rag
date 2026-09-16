@@ -60,24 +60,32 @@ A유형은 보도자료 텍스트에 없는 수치(세그먼트, 브릿지 항�
 비전 인덱스는 §4의 배치 방식으로 전환한 뒤 전부 다시 채운다 (터널 방식은 `render_scale` 0.85로
 품질이 깎여 있으므로 1.5로 재인덱싱).
 
-### 2.4 평가셋 `eval/questions.jsonl` — ❌ 0/30
+### 2.4 평가셋 `eval/questions.jsonl` — ✅ 30/30 (2026-09-16, `scripts/12_validate_questions.py` 통과)
 
 ```json
 {"id": "A03", "type": "A", "block_type": "chart",
- "q_ko": "2025년 2분기 Dupixent 매출은 전년 동기 대비 몇 % 성장했나?",
- "q_en": "How much did Dupixent sales grow year-over-year in Q2 2025?",
- "answer": "…% (CER 기준), €… ",
- "gold_pages": [{"source": "Q2.pdf", "page": 5}],
- "period_spec": "explicit",
- "notes": "차트 축 라벨에서만 읽힘. 본문에는 CER 성장률만 있음"}
+ "q_ko": "2024년 2분기 독감(Flu) 백신 매출은 얼마였나?",
+ "q_en": "What were influenza (Flu) vaccine sales in Q2 2024?",
+ "answer": "€115 million (Q2 2024). Q2 2025 was €141 million.",
+ "answer_keys": ["115"],
+ "gold_pages": [{"source": "Q2_deck.pdf", "page": 4}],
+ "period_spec": "explicit", "needs_review": false, "visual_only": false,
+ "notes": "Q2 deck vaccines stacked bar, prior-year segment. Press release gives only Q2 2025 value 141."}
 ```
 
 | 필드 | 값 |
 |---|---|
 | `type` | A 차트 10 / B 표 10 / C 본문 5 / D 멀티홉 5 |
-| `block_type` | 정답이 위치한 블록: `chart` / `table` / `text` (D는 복수 가능) |
-| `period_spec` | `explicit` 25개(gold_pages 단일) / `ambiguous` 5개(gold_pages 복수 허용) |
-| `gold_pages` | `page_inventory.csv`와 대조해 검증. 20-F 발췌본은 **발췌 후 페이지 번호** 사용 |
+| `block_type` | 정답이 위치한 블록: `chart` / `table` / `text` |
+| `period_spec` | `explicit` 25개 / `ambiguous` 5개(gold_pages 복수, 하나만 잡혀도 hit). ambiguous는 A09, A10, B09, B10, C05 |
+| `gold_pages` | `page_inventory.csv`와 대조해 검증. 발췌본(20-F, 덱)은 **발췌 후 페이지 번호** |
+| `answer_keys` | 정답의 핵심 문자열. 검증 스크립트가 gold page 텍스트 레이어에서 존재 확인 (judge 보조용) |
+| `visual_only` | 정답이 텍스트 레이어에 없음(래스터 라벨, 막대 높이 읽기). A04, A08 |
+| `needs_review` | 렌더로 확인 못 한 값. 현재 0개 |
+
+**정답 중복 검사**: 검증 스크립트가 A유형 answer_keys를 보도자료 전 페이지에서 검색해 경고. 현재 경고는 전부 우연한
+부분 문자열 일치(환율표의 98.637, 주식수 1,218.1 등)로 확인됨. 실제 중복이던 A07의 CER 매출 13,012(Q3.pdf p25)와
+A04의 +52.5%(Q2.pdf p2)는 질문에서 제거.
 
 작성 규칙:
 - 25개 explicit 질문은 "FY2025 / Q2 2025"처럼 기간을 명시한다 (D8·D9: 연간 vs 분기 granularity 혼재).
@@ -132,8 +140,8 @@ A유형은 보도자료 텍스트에 없는 수치(세그먼트, 브릿지 항�
 | 순서 | 작업 | 환경 | 산출물 |
 |---|---|---|---|
 | 1 ✅ | 20-F 300p + 덱 3개 페이지 유형 스캔 → 발췌 50p + 15p × 3 확정 | 로컬 (pypdfium2 렌더 + Claude 확인) | `scripts/11_build_extracts.py`, `data/pdf/20F_extract.pdf`, `Q{n}_deck.pdf`, `docs/CORPUS.md` |
-| 2 | 코퍼스 172p 페이지 인벤토리 | 로컬 | `eval/page_inventory.csv` |
-| 3 | 질문 30 × 2 작성 + 레이블 + 검증 스크립트 | 로컬 | `eval/questions.jsonl`, `scripts/12_validate_questions.py` |
+| 2 ✅ | 코퍼스 172p 페이지 인벤토리 (chart 27 / table 73 / text 35 / mixed 37) | 로컬 | `eval/page_inventory.csv` |
+| 3 ✅ | 질문 30 × 2 작성 + 레이블 + 검증 스크립트 (외부 리뷰어 검토는 미완) | 로컬 | `eval/questions.jsonl`, `scripts/12_validate_questions.py` |
 | 4 | Colab 배치 인덱싱 노트북 + npz 로더 | Colab + 로컬 | `notebooks/03_*.ipynb`, `scripts/13_load_nemotron_npz.py` |
 | 5 | 텍스트·캡션 인덱스 7파일 전부 (Docling bad_alloc 페이지 배치 재처리 포함) | 로컬 (+API) | Qdrant 3컬렉션 채움 |
 | 6 | `eval/metrics.py`(Recall@k, NDCG@k, 정답 일치 judge) + `eval/runner.py` | 로컬 | `python -m pharma_vision_rag.eval.runner --mode all` → CSV |
