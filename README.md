@@ -3,7 +3,7 @@
 > Pharmaceutical-domain multimodal hybrid RAG benchmark with 2026 SOTA stack.
 > Cross-lingual (KR/EN) evaluation on Sanofi FY2025 corpus.
 
-**Status**: 🚧 Phase 0 — environment setup. See [plan.md](plan.md) for roadmap.
+**Status**: ✅ Phase 1 complete — all 4 modes + LangGraph hybrid verified end-to-end on a partial index. Phase 2 (eval set) next. See [docs/EXPERIMENT_PLAN.md](docs/EXPERIMENT_PLAN.md) for the current plan and [CLAUDE.md](CLAUDE.md) for the project overview.
 
 ---
 
@@ -26,13 +26,13 @@ Traditional RAG (OCR → chunk → embed) fails on pharma PDFs because critical 
 
 ## Tech stack (2026 SOTA)
 
-- **Visual retriever**: Nemotron ColEmbed V2 (4B default, 3rd on ViDoRe V3) — swappable to 8B (#1) or 3B (T4-friendly)
+- **Visual retriever**: Nemotron ColEmbed V2 — currently `nvidia/llama-nemotron-colembed-vl-3b-v2` (T4-friendly, 6th on ViDoRe V3); swappable to 4B (#3) or 8B (#1) by changing `MODEL_ID` in the Colab notebook
 - **Text retriever**: BGE-M3 (multilingual, ColBERT-style multi-vector)
 - **Layout + OCR**: IBM Docling
-- **Reranker**: ZeRank2 vs `llama-nemotron-rerank-vl-1b-v2` (A/B)
-- **Generator**: Claude Sonnet 4.7 Vision (+ Qwen3-VL-8B comparator)
+- **Reranker**: `BAAI/bge-reranker-v2-m3` cross-encoder (module is named `zerank2.py` after the PRD label; Nemotron rerank A/B deferred)
+- **Generator**: Claude Sonnet Vision (`claude-sonnet-4-6`) with prompt caching; page captions via `claude-haiku-4-5`
 - **Vector DB**: Qdrant (multi-vector native)
-- **Router**: LangGraph
+- **Router**: LangGraph (deterministic DAG with a keyword-weighted RRF merge — not an agent loop)
 - **Observability**: Langfuse
 - **UI**: Gradio
 - **Eval**: custom (ViDoRe V3 metrics reused)
@@ -47,8 +47,6 @@ Sanofi 2025 public disclosures (not committed to repo, see `data/pdf/`):
 30 Korean questions (with English parallels) across chart/table/text/multi-hop types, 25 with specific periods and 5 temporally ambiguous for disambiguation experiments.
 
 ## Quick start
-
-> Not runnable yet. Phase 0 scaffolding in progress.
 
 ```bash
 # Clone
@@ -96,13 +94,13 @@ pharma-vision-rag/
 
 ## Roadmap
 
-- **Phase 0** (in progress): environment + scaffolding
-- **Phase 1**: swap VARAG internals with 2026 SOTA models
-- **Phase 2**: build Korean question set + eval pipeline
+- **Phase 0** ✅: environment + scaffolding
+- **Phase 1** ✅: 4 modes + LangGraph hybrid, verified on Q1.pdf (partial index)
+- **Phase 2** (next): 20-F extract, page inventory, 30×2 Korean/English question set, Colab batch indexing, eval runner
 - **Phase 3**: full benchmark + text-optimization ablation (baseline vs +QT vs +HyDE) + KR/EN breakdown
 - **Phase 4**: README/blog/demo deploy
 
-Details in [plan.md](plan.md).
+Current plan: [docs/EXPERIMENT_PLAN.md](docs/EXPERIMENT_PLAN.md). Original roadmap: [plan.md](plan.md). Progress log: [summary.md](summary.md).
 
 ## Planned deliverables
 

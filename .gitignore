@@ -72,3 +72,6 @@ Thumbs.db
 .cache/
 tmp/
 scratch/
+
+# ─── Eval set (committed, unlike results) ───
+!eval/page_inventory.csv
