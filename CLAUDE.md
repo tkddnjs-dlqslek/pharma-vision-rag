@@ -72,8 +72,9 @@ data/pdf/      원본 PDF — gitignore. 원본 파일명 고정: Q1.pdf, Q2.pdf
 - Qdrant: `docker compose up -d qdrant`. 포트 **6335(REST) / 6336(gRPC)** — 6333은 다른 컨테이너(n8n)가 점유.
   멀티벡터 업서트는 반드시 gRPC(`prefer_grpc=True`). REST는 JSON 팽창으로 100MB 초과.
   `QDRANT__SERVICE__MAX_REQUEST_SIZE_MB`는 v1.12.4에서 actix 워커를 멈추므로 **설정하지 말 것**.
-- 비전 인덱싱은 Colab 노트북 실행 → 출력된 URL을 `.env`의 `COLAB_EMBEDDING_URL`에 넣어야 동작.
-- 실행 순서(의존): `03`(텍스트 인덱스) → `08`(캡션 인덱스) → `06`(비전 인덱스, Colab 필요) → `10`(4모드 smoke).
+- 비전 인덱싱(Phase 2): RunPod에서 `scripts/embed_pages_gpu.py` 실행 → `embeddings.zip` 받아
+  `data/embeddings/`에 두고 `scripts/13_load_nemotron_npz.py <zip>`으로 Qdrant 업서트. 터널(`06`, `COLAB_EMBEDDING_URL`)은 deprecated.
+- 실행 순서(의존): `11`(발췌본) → `03`(텍스트 인덱스) → `08`(캡션 인덱스) → `13`(비전 로더) → `10`(4모드 smoke).
 - 새 스크립트는 기존 패턴 유지: `ROOT/src`를 `sys.path`에 추가, `load_dotenv(ROOT/".env")`, 번호 접두사.
 
 ## 알려진 문제와 우회 (재발 방지용)
@@ -99,4 +100,5 @@ data/pdf/      원본 PDF — gitignore. 원본 파일명 고정: Q1.pdf, Q2.pdf
 ## 다음 할 일
 
 `docs/EXPERIMENT_PLAN.md` §5 실행 순서를 따른다. 요약: 20-F 발췌 확정 → 페이지 인벤토리 →
-질문 30×2 작성·레이블 → Colab 배치 인덱싱으로 전 코퍼스 3개 인덱스 채움 → `eval/runner.py` → 벤치마크.
+질문 30×2 작성·레이블 → RunPod 배치 임베딩 + 로컬 텍스트·캡션 인덱스로 3개 인덱스 채움 → `eval/runner.py` → 벤치마크.
+(2026-09-16 기준 1~3 완료, 4 코드 완료. 다음: RunPod 실행 → `13` 로더 → 순서 5.)

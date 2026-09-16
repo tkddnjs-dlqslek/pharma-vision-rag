@@ -116,7 +116,7 @@ A04의 +52.5%(Q2.pdf p2)는 질문에서 제거.
 | Hybrid 라우팅 결정 로그 분석 | 라우터가 키워드 휴리스틱이라 분석 가치 낮음. 라우터를 LLM/조건부 엣지로 바꾼 뒤에 의미 있음 |
 | Qwen3-VL 생성기 비교 | PRD stretch. D4에 따라 보류 |
 
-## 4. 인프라 선행 과제 — 비전 인덱싱 경로 교체 (❌, Phase 2 첫 작업)
+## 4. 인프라 선행 과제 — 비전 인덱싱 경로 교체 (🔶 코드 완료, 실행 대기 — 2026-09-16)
 
 **문제**: 현재 `retriever/nemotron.py`는 Colab FastAPI 터널에 페이지 이미지를 보내고 `[N_patches, 3072]`
 임베딩(~14MB/페이지)을 받아온다. Cloudflare 무료 터널이 30MB에서 502를 내고 throughput이 페이지당
@@ -124,16 +124,16 @@ A04의 +52.5%(Q2.pdf p2)는 질문에서 제거.
 
 **해법**: 임베딩을 인터넷으로 왕복시키지 않는다.
 
-1. `notebooks/03_nemotron_batch_index.ipynb` — Colab에서 PDF 4개를 업로드/마운트 → 전 페이지
-   `render_scale=1.5`로 렌더 → Nemotron 3B `forward_images` 배치 → 페이지당 fp16 배열을
-   `{source}_{page}.npy`로 저장 → `embeddings.zip` 하나로 다운로드. (예상: 페이지당 ~5초 → 172p ≈ 15분)
-2. `scripts/13_load_nemotron_npz.py` — zip 해제 → `NemotronVisionRetriever.qdrant.upsert` (gRPC)로 로컬 업서트.
-   포인트 ID는 기존 `_page_id(source, page)` 재사용 → idempotent.
-3. 쿼리 시점 임베딩(`embed_query`)은 여전히 Colab 터널이 필요 (질문 60개 × 텍스트라 가벼움).
-   벤치마크 실행 전에 **60개 질문의 쿼리 임베딩도 같은 노트북에서 미리 뽑아 `.npz`로 받아두면** 벤치마크
-   중 Colab 의존을 완전히 끊을 수 있다. 권장.
+1. ✅ `scripts/embed_pages_gpu.py` — **RunPod**(Colab 아님, 09-16 결정) GPU 박스에서 단독 실행. PDF 7개 →
+   전 페이지 `render_scale=1.5` 렌더 → Nemotron 3B `forward_images` 배치 → `pages/<source>/<page>.npy`(fp16) +
+   `queries/<id>_<ko|en>.npy` 60개 + `manifest.json` → `embeddings.zip`. 재실행 시 기존 `.npy` 건너뜀.
+   (예상: 4090 약 10분, T4급 약 15분. zip 약 2.4GB)
+2. ✅ `scripts/13_load_nemotron_npz.py` — zip 해제 → `NemotronVisionRetriever.qdrant.upsert` (gRPC)로 로컬 업서트.
+   포인트 ID는 기존 `_page_id(source, page)` 재사용 → idempotent. 더미 임베딩으로 스모크 테스트 통과.
+3. ✅ 쿼리 임베딩 60개도 같은 스크립트에서 뽑아 zip에 포함 → 벤치마크 중 GPU 의존 없음.
+   `eval/runner.py`(순서 6)는 `data/embeddings/<zip이름>/queries/`를 읽는 오프라인 쿼리 클라이언트를 쓴다.
 
-기존 `06_index_nemotron.py`(터널 방식)는 남겨두되 docstring에 deprecated 표기.
+`06_index_nemotron.py`(터널 방식)는 docstring에 deprecated 표기. `02_nemotron_tunnel.ipynb`는 fallback으로만.
 
 ## 5. 실행 순서와 실행 환경
 
@@ -142,13 +142,13 @@ A04의 +52.5%(Q2.pdf p2)는 질문에서 제거.
 | 1 ✅ | 20-F 300p + 덱 3개 페이지 유형 스캔 → 발췌 50p + 15p × 3 확정 | 로컬 (pypdfium2 렌더 + Claude 확인) | `scripts/11_build_extracts.py`, `data/pdf/20F_extract.pdf`, `Q{n}_deck.pdf`, `docs/CORPUS.md` |
 | 2 ✅ | 코퍼스 172p 페이지 인벤토리 (chart 27 / table 73 / text 35 / mixed 37) | 로컬 | `eval/page_inventory.csv` |
 | 3 ✅ | 질문 30 × 2 작성 + 레이블 + 검증 스크립트 (외부 리뷰어 검토는 미완) | 로컬 | `eval/questions.jsonl`, `scripts/12_validate_questions.py` |
-| 4 | Colab 배치 인덱싱 노트북 + npz 로더 | Colab + 로컬 | `notebooks/03_*.ipynb`, `scripts/13_load_nemotron_npz.py` |
+| 4 🔶 | GPU 배치 임베딩 스크립트 + npz 로더 (코드 완료, RunPod 실행은 사용자) | RunPod + 로컬 | `scripts/embed_pages_gpu.py`, `scripts/13_load_nemotron_npz.py` |
 | 5 | 텍스트·캡션 인덱스 7파일 전부 (Docling bad_alloc 페이지 배치 재처리 포함) | 로컬 (+API) | Qdrant 3컬렉션 채움 |
 | 6 | `eval/metrics.py`(Recall@k, NDCG@k, 정답 일치 judge) + `eval/runner.py` | 로컬 | `python -m pharma_vision_rag.eval.runner --mode all` → CSV |
 | 7 | E1·E2 실행 (검색 1회 → 생성 3회) | 로컬 (+API) | `eval/results/*.csv` (gitignore) |
 | 8 | E3 재집계 + 그래프 + 실패 케이스 10개 정성 분석 | 로컬 | `docs/REPORT.md` |
 
-1~3은 API·GPU 없이 PDF만 있으면 된다. 4는 Colab 필요. 5~7은 로컬 Qdrant + Anthropic 키 필요.
+1~3은 API·GPU 없이 PDF만 있으면 된다. 4는 RunPod GPU 필요. 5~7은 로컬 Qdrant + Anthropic 키 필요.
 
 ## 6. 지표와 보고 규칙
 

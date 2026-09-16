@@ -1,4 +1,4 @@
-"""DEPRECATED (Phase 2): use notebooks/03_nemotron_batch_index.ipynb + scripts/13_load_nemotron_npz.py.
+"""DEPRECATED (Phase 2): use scripts/embed_pages_gpu.py (RunPod) + scripts/13_load_nemotron_npz.py.
 Tunnel path kept only as fallback.
 
 One-time indexing — push every page of given PDF(s) through the Colab

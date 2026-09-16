@@ -1,6 +1,6 @@
-"""Load Nemotron page embeddings produced by notebooks/03_nemotron_batch_index.ipynb into Qdrant.
+"""Load Nemotron page embeddings produced by scripts/embed_pages_gpu.py (GPU box) into Qdrant.
 
-Input: embeddings.zip (or an already-extracted directory) with
+Input: embeddings.zip from scripts/embed_pages_gpu.py (RunPod) — or an already-extracted directory — with
     manifest.json
     pages/<source>/<page>.npy      fp16 [N_patches, 3072]
     queries/<id>_<lang>.npy        fp16 [N_tokens, 3072]  (kept on disk for the eval runner; not upserted)
