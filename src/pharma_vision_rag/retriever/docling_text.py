@@ -30,14 +30,32 @@ DEFAULT_COLLECTION = "pharma_text"
 DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
 EMBED_DIM = 1024
 MIN_TEXT_LEN = 10  # skip fragments shorter than this
+MAX_CHUNK_CHARS = 1500  # split longer blocks (big appendix tables reach ~9k chars) at line boundaries
+EMBED_MAX_SEQ = 1024    # BGE-M3 default 8192; CPU attention cost is quadratic and chunks are <= 1500 chars
 
 # Stable UUID namespace so re-indexing the same (source, block) upserts cleanly.
 _NS = uuid.UUID("0f4cf7cb-9e3e-4cfa-a5d1-d9b64a4f2fe1")
 
 
-def _chunk_id(source: str, block_type: str, page: int | None, block_index: int) -> str:
+def _chunk_id(source: str, block_type: str, page: int | None, block_index: int | str) -> str:
     # page is part of the id: per-page fallback conversions restart block_index at 0
     return str(uuid.uuid5(_NS, f"{source}:{block_type}:{page}:{block_index}"))
+
+
+def _split(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[str]:
+    """Split at line boundaries so markdown table rows stay intact; hard-cut only if one line is too long."""
+    if len(text) <= max_chars:
+        return [text]
+    pieces, buf = [], ""
+    for line in text.splitlines(keepends=True):
+        while len(line) > max_chars:
+            pieces.append((buf + line[:max_chars]).strip()); buf, line = "", line[max_chars:]
+        if len(buf) + len(line) > max_chars and buf:
+            pieces.append(buf.strip()); buf = ""
+        buf += line
+    if buf.strip():
+        pieces.append(buf.strip())
+    return pieces
 
 
 class DoclingTextRetriever:
@@ -66,6 +84,7 @@ class DoclingTextRetriever:
         )
         log.info("Loading embedding model %s (~2.3 GB on first run)", embed_model)
         self.embedder = SentenceTransformer(embed_model)
+        self.embedder.max_seq_length = EMBED_MAX_SEQ
         # Corpus is born-digital: no OCR (RapidOCR models + page rasters were the main RAM cost,
         # and the 2026-09-16 run was OOM-killed on a 16 GB box). Table structure stays on.
         pipeline = PdfPipelineOptions(do_ocr=False, do_table_structure=True)
@@ -101,13 +120,14 @@ class DoclingTextRetriever:
                 continue
             prov = getattr(item, "prov", None)
             page = prov[0].page_no if prov else None
-            chunks.append({
-                "text": text,
-                "page": page,
-                "block_type": "text",
-                "block_index": idx,
-                "source": source,
-            })
+            for k, piece in enumerate(_split(text)):
+                chunks.append({
+                    "text": piece,
+                    "page": page,
+                    "block_type": "text",
+                    "block_index": idx if k == 0 else f"{idx}.{k}",
+                    "source": source,
+                })
 
         for idx, table in enumerate(getattr(doc, "tables", [])):
             try:
@@ -122,13 +142,14 @@ class DoclingTextRetriever:
                 continue
             prov = getattr(table, "prov", None)
             page = prov[0].page_no if prov else None
-            chunks.append({
-                "text": md,
-                "page": page,
-                "block_type": "table",
-                "block_index": idx,
-                "source": source,
-            })
+            for k, piece in enumerate(_split(md)):
+                chunks.append({
+                    "text": piece,
+                    "page": page,
+                    "block_type": "table",
+                    "block_index": idx if k == 0 else f"{idx}.{k}",
+                    "source": source,
+                })
 
         log.info("%s: extracted %d chunks (text + table)", pdf_path.name, len(chunks))
         return chunks

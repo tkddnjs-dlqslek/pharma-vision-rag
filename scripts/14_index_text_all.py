@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 from dotenv import load_dotenv
+from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -36,6 +37,12 @@ def index_file(retriever: DoclingTextRetriever, name: str) -> dict:
     path = PDF_DIR / name
     n_pages = page_count(path)
     t0 = time.time()
+    # clean re-index: drop this source's old points so a changed chunking scheme leaves no orphans
+    retriever.ensure_collection()
+    retriever.client.delete(
+        collection_name=retriever.collection,
+        points_selector=FilterSelector(filter=Filter(must=[FieldCondition(key="source", match=MatchValue(value=name))])),
+    )
     chunks, by_type, failed = 0, {"text": 0, "table": 0}, []
 
     def run(rng: tuple[int, int]) -> None:
