@@ -68,6 +68,9 @@ data/pdf/      원본 PDF — gitignore. 원본 파일명 고정: Q1.pdf, Q2.pdf
 ## 로컬 실행 규칙
 
 - Windows 환경. 스크립트는 반드시 `PYTHONIOENCODING=utf-8 python scripts/XX.py` (cp949 깨짐 방지).
+- venv는 `.venv` (anaconda 3.11 기반, 2026-09-16). `pip install -r requirements.txt`는 `PYTHONUTF8=1` 필요(주석의 `─`가 cp949 에러).
+  설치 후 반드시 교체: `torch==2.8.0`, `torchvision==0.23.0` (`--index-url https://download.pytorch.org/whl/cpu`),
+  `sentencepiece==0.2.0`. 기본 pip가 주는 torch 2.14는 c10.dll 초기화 실패(WinError 1114), sentencepiece 0.2.2는 segfault.
 - `.env`는 `.env.example` 기준. `QDRANT_URL=http://localhost:6335`. **절대 커밋 금지.**
 - Qdrant: `docker compose up -d qdrant`. 포트 **6335(REST) / 6336(gRPC)** — 6333은 다른 컨테이너(n8n)가 점유.
   멀티벡터 업서트는 반드시 gRPC(`prefer_grpc=True`). REST는 JSON 팽창으로 100MB 초과.

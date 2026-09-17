@@ -17,7 +17,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import AcceleratorOptions, PdfPipelineOptions
+from docling.document_converter import DocumentConverter, PdfFormatOption
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 from sentence_transformers import SentenceTransformer
@@ -33,8 +35,9 @@ MIN_TEXT_LEN = 10  # skip fragments shorter than this
 _NS = uuid.UUID("0f4cf7cb-9e3e-4cfa-a5d1-d9b64a4f2fe1")
 
 
-def _chunk_id(source: str, block_type: str, block_index: int) -> str:
-    return str(uuid.uuid5(_NS, f"{source}:{block_type}:{block_index}"))
+def _chunk_id(source: str, block_type: str, page: int | None, block_index: int) -> str:
+    # page is part of the id: per-page fallback conversions restart block_index at 0
+    return str(uuid.uuid5(_NS, f"{source}:{block_type}:{page}:{block_index}"))
 
 
 class DoclingTextRetriever:
@@ -63,7 +66,14 @@ class DoclingTextRetriever:
         )
         log.info("Loading embedding model %s (~2.3 GB on first run)", embed_model)
         self.embedder = SentenceTransformer(embed_model)
-        self.converter = DocumentConverter()
+        # Corpus is born-digital: no OCR (RapidOCR models + page rasters were the main RAM cost,
+        # and the 2026-09-16 run was OOM-killed on a 16 GB box). Table structure stays on.
+        pipeline = PdfPipelineOptions(do_ocr=False, do_table_structure=True)
+        # Docling defaults to 4 threads; the indexing box has 16 logical cores.
+        pipeline.accelerator_options = AcceleratorOptions(num_threads=8, device="cpu")
+        self.converter = DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline)}
+        )
 
     # ─── Index ────────────────────────────────────────────────────────────
 
@@ -75,10 +85,13 @@ class DoclingTextRetriever:
             )
             log.info("Created collection %s (dim=%d)", self.collection, EMBED_DIM)
 
-    def _extract_chunks(self, pdf_path: Path, source: str) -> list[dict[str, Any]]:
-        """Parse one PDF and return a list of chunk dicts."""
-        log.info("Parsing %s with Docling", pdf_path.name)
-        doc = self.converter.convert(str(pdf_path)).document
+    def _extract_chunks(
+        self, pdf_path: Path, source: str, page_range: tuple[int, int] | None = None
+    ) -> list[dict[str, Any]]:
+        """Parse one PDF (optionally a 1-based inclusive page range) and return chunk dicts."""
+        log.info("Parsing %s with Docling (pages %s)", pdf_path.name, page_range or "all")
+        kwargs = {"page_range": page_range} if page_range else {}
+        doc = self.converter.convert(str(pdf_path), **kwargs).document
 
         chunks: list[dict[str, Any]] = []
 
@@ -120,13 +133,19 @@ class DoclingTextRetriever:
         log.info("%s: extracted %d chunks (text + table)", pdf_path.name, len(chunks))
         return chunks
 
-    def index(self, pdf_path: str | Path, source: str | None = None, batch_size: int = 32) -> dict[str, Any]:
-        """Parse ``pdf_path``, embed, upsert. Idempotent via stable UUIDs."""
+    def index(
+        self,
+        pdf_path: str | Path,
+        source: str | None = None,
+        batch_size: int = 32,
+        page_range: tuple[int, int] | None = None,
+    ) -> dict[str, Any]:
+        """Parse ``pdf_path`` (or a page range), embed, upsert. Idempotent via stable UUIDs."""
         pdf_path = Path(pdf_path)
         source = source or pdf_path.name
         self.ensure_collection()
 
-        chunks = self._extract_chunks(pdf_path, source=source)
+        chunks = self._extract_chunks(pdf_path, source=source, page_range=page_range)
         if not chunks:
             return {"source": source, "chunks": 0, "collection": self.collection}
 
@@ -140,7 +159,7 @@ class DoclingTextRetriever:
 
         points = [
             PointStruct(
-                id=_chunk_id(c["source"], c["block_type"], c["block_index"]),
+                id=_chunk_id(c["source"], c["block_type"], c["page"], c["block_index"]),
                 vector=v.tolist(),
                 payload=c,
             )
