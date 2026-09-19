@@ -9,7 +9,10 @@ services:
       - "6335:6333"   # HTTP REST (host:container) — access at http://localhost:6335
       - "6336:6334"   # gRPC
     volumes:
-      - ./data/qdrant_storage:/qdrant/storage
+      # Named volume, NOT a Windows bind mount: with ./data/qdrant_storage every vector in pharma_text
+      # came back zero-norm after an unclean host shutdown (2026-09-19). Qdrant documents bind mounts
+      # on Windows/WSL as unsafe for its mmap storage.
+      - qdrant_storage:/qdrant/storage
     environment:
       QDRANT__LOG_LEVEL: INFO
       # Note: do NOT set QDRANT__SERVICE__MAX_REQUEST_SIZE_MB on v1.12.4 —
@@ -47,6 +50,9 @@ services:
   #     TELEMETRY_ENABLED: "false"
   #     LANGFUSE_INIT_ORG_ID: pharma-rag
   #     LANGFUSE_INIT_PROJECT_ID: pharma-vision-rag
+
+volumes:
+  qdrant_storage:
 
 networks:
   default:
