@@ -6,11 +6,13 @@ Local side: scripts/13_load_nemotron_npz.py upserts the zip into Qdrant (pharma_
 
 RunPod recipe (PyTorch template, any 16 GB+ GPU; ~10 min on RTX 4090, ~15 min on T4-class):
     # on the pod
-    pip install -q transformers accelerate einops sentencepiece pypdfium2 Pillow huggingface_hub
-    export HF_TOKEN=hf_...                      # model repo is gated
+    pip install -q "transformers>=4.45,<5" accelerate einops sentencepiece pypdfium2 Pillow huggingface_hub
+    export HF_TOKEN=hf_...                      # gated: accept the NVIDIA license on the model page first
+    # flash-attn is optional (model card recommends it; Phase 1 ran without it on a T4)
     mkdir -p /workspace/input                   # then upload from local:
     #   runpodctl send data/pdf/*.pdf eval/questions.jsonl scripts/embed_pages_gpu.py   -> receive on pod into /workspace/input
     #   (or scp -P <port> ... root@<ip>:/workspace/input/)
+    python /workspace/input/embed_pages_gpu.py --input /workspace/input --out /workspace/smoke --smoke   # 1 min check first
     python /workspace/input/embed_pages_gpu.py --input /workspace/input --out /workspace/embeddings
     # download /workspace/embeddings.zip (runpodctl send embeddings.zip on the pod, receive locally into data/embeddings/)
 
@@ -74,9 +76,10 @@ def render_pages(pdf_path: Path, scale: float):
         pdf.close()
 
 
-def embed_pages(model, inp: Path, out: Path, scale: float, batch: int, manifest: dict) -> None:
+def embed_pages(model, inp: Path, out: Path, scale: float, batch: int, manifest: dict,
+                sources: list[str] = CORPUS, max_pages: int | None = None) -> None:
     t0, done = time.time(), 0
-    for source in CORPUS:
+    for source in sources:
         out_dir = out / "pages" / source
         out_dir.mkdir(parents=True, exist_ok=True)
         pending: list[tuple[int, object]] = []
@@ -95,6 +98,8 @@ def embed_pages(model, inp: Path, out: Path, scale: float, batch: int, manifest:
             pending.clear()
 
         for page, img in render_pages(inp / source, scale):
+            if max_pages and page > max_pages:
+                break
             f = out_dir / f"{page}.npy"
             if f.exists():
                 arr = np.load(f, mmap_mode="r")
@@ -130,6 +135,7 @@ def main() -> None:
     ap.add_argument("--scale", type=float, default=1.5, help="pypdfium2 render scale (1.5 ~ 150 DPI)")
     ap.add_argument("--batch", type=int, default=2, help="images per forward_images call (2 on 16 GB, 4 on 24 GB+)")
     ap.add_argument("--no-zip", action="store_true")
+    ap.add_argument("--smoke", action="store_true", help="2 pages of Q1.pdf + all queries, no zip: verify the stack before the full run")
     a = ap.parse_args()
 
     missing = [n for n in CORPUS + ["questions.jsonl"] if not (a.input / n).exists()]
@@ -140,10 +146,18 @@ def main() -> None:
     model = load_model(device)
 
     manifest = {"model_id": MODEL_ID, "render_scale": a.scale, "dim": 3072, "pages": [], "queries": []}
-    embed_pages(model, a.input, a.out, a.scale, a.batch, manifest)
+    if a.smoke:
+        embed_pages(model, a.input, a.out, a.scale, a.batch, manifest, sources=["Q1.pdf"], max_pages=2)
+    else:
+        embed_pages(model, a.input, a.out, a.scale, a.batch, manifest)
     embed_queries(model, a.input / "questions.jsonl", a.out, manifest)
     (a.out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
 
+    if a.smoke:
+        arr = np.load(a.out / "pages" / "Q1.pdf" / "1.npy")
+        assert arr.ndim == 2 and arr.shape[1] == 3072 and arr.dtype == np.float16, f"unexpected page embedding {arr.shape} {arr.dtype}"
+        print(f"SMOKE OK: page emb {arr.shape} {arr.dtype}, {len(manifest['queries'])} queries")
+        return
     if not a.no_zip:
         zip_path = shutil.make_archive(str(a.out), "zip", a.out)
         print(f"{zip_path}  {Path(zip_path).stat().st_size / 1e9:.2f} GB")
