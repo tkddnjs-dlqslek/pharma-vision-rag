@@ -37,6 +37,8 @@ RESULTS = ROOT / "eval" / "results"
 EMB_DIR = ROOT / "data" / "embeddings"
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6335")
 CHUNK_POOL = 30   # chunks fetched before collapsing to pages / reranking
+CANDIDATES = RESULTS / "text_candidates.json"  # query -> dense top-CHUNK_POOL chunks
+_candidates: dict[str, list[dict[str, Any]]] = {}
 PAGE_POOL = 8     # pages per retriever fed to RRF (matches HybridMode)
 
 Search = Callable[[str, str], list[dict[str, Any]]]  # (question_id_lang, query_text) -> hits
@@ -61,7 +63,7 @@ def _collection_count(name: str) -> int:
 
 def build_variants(wanted: list[str]) -> dict[str, Search]:
     variants: dict[str, Search] = {}
-    need_text = {"text", "text_rerank", "hybrid"} & set(wanted)
+    need_text = {"text", "hybrid"} & set(wanted) or ("text_rerank" in wanted and not CANDIDATES.exists())
     need_vision = {"vision", "hybrid"} & set(wanted)
     text = vision = None
 
@@ -80,8 +82,19 @@ def build_variants(wanted: list[str]) -> dict[str, Search]:
             print("SKIP vision variants: no data/embeddings/*/manifest.json or pharma_vision empty (run scripts/13)")
 
     if text and "text" in wanted:
-        variants["text"] = lambda q: text.search(q, k=CHUNK_POOL)
-    if text and "text_rerank" in wanted:
+        def text_search(q: str) -> list[dict[str, Any]]:
+            hits = text.search(q, k=CHUNK_POOL)
+            _candidates[q] = hits  # saved for a later rerank-only run
+            return hits
+        variants["text"] = text_search
+    if "text_rerank" in wanted and "text" not in wanted and CANDIDATES.exists():
+        # rerank-only run: dense candidates come from the cache, so BGE-M3 and the reranker (2.3 GB each)
+        # never sit in RAM together. The 16 GB dev box could not hold both.
+        from pharma_vision_rag.rerank.zerank2 import ZeRank2Reranker
+        cached = json.loads(CANDIDATES.read_text(encoding="utf-8"))
+        rr = ZeRank2Reranker()
+        variants["text_rerank"] = lambda q: rr.rerank(q, [dict(h) for h in cached[q]], top_k=CHUNK_POOL)
+    elif text and "text_rerank" in wanted:
         from pharma_vision_rag.rerank.zerank2 import ZeRank2Reranker
         rr = ZeRank2Reranker()
         variants["text_rerank"] = lambda q: rr.rerank(q, text.search(q, k=CHUNK_POOL), top_k=CHUNK_POOL)
@@ -147,7 +160,9 @@ def main() -> None:
     if not rows:
         raise SystemExit("no variant available")
     RESULTS.mkdir(parents=True, exist_ok=True)
-    out = RESULTS / "retrieval.csv"
+    if _candidates:
+        CANDIDATES.write_text(json.dumps(_candidates, ensure_ascii=False), encoding="utf-8")
+    out = RESULTS / f"retrieval_{'-'.join(sorted({r['variant'] for r in rows}))}.csv"
     with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()
