@@ -24,13 +24,13 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 from sentence_transformers import SentenceTransformer
 
+from pharma_vision_rag.retriever.chunking import build_chunks, embed_text
+
 log = logging.getLogger(__name__)
 
 DEFAULT_COLLECTION = "pharma_text"
 DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
 EMBED_DIM = 1024
-MIN_TEXT_LEN = 10  # skip fragments shorter than this
-MAX_CHUNK_CHARS = 1500  # split longer blocks (big appendix tables reach ~9k chars) at line boundaries
 EMBED_MAX_SEQ = 1024    # BGE-M3 default 8192; CPU attention cost is quadratic and chunks are <= 1500 chars
 
 # Stable UUID namespace so re-indexing the same (source, block) upserts cleanly.
@@ -40,22 +40,6 @@ _NS = uuid.UUID("0f4cf7cb-9e3e-4cfa-a5d1-d9b64a4f2fe1")
 def _chunk_id(source: str, block_type: str, page: int | None, block_index: int | str) -> str:
     # page is part of the id: per-page fallback conversions restart block_index at 0
     return str(uuid.uuid5(_NS, f"{source}:{block_type}:{page}:{block_index}"))
-
-
-def _split(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[str]:
-    """Split at line boundaries so markdown table rows stay intact; hard-cut only if one line is too long."""
-    if len(text) <= max_chars:
-        return [text]
-    pieces, buf = [], ""
-    for line in text.splitlines(keepends=True):
-        while len(line) > max_chars:
-            pieces.append((buf + line[:max_chars]).strip()); buf, line = "", line[max_chars:]
-        if len(buf) + len(line) > max_chars and buf:
-            pieces.append(buf.strip()); buf = ""
-        buf += line
-    if buf.strip():
-        pieces.append(buf.strip())
-    return pieces
 
 
 class DoclingTextRetriever:
@@ -104,31 +88,23 @@ class DoclingTextRetriever:
             )
             log.info("Created collection %s (dim=%d)", self.collection, EMBED_DIM)
 
-    def _extract_chunks(
+    def _raw_blocks(
         self, pdf_path: Path, source: str, page_range: tuple[int, int] | None = None
     ) -> list[dict[str, Any]]:
-        """Parse one PDF (optionally a 1-based inclusive page range) and return chunk dicts."""
+        """Parse one PDF (optionally a 1-based inclusive page range) into raw text/table blocks."""
         log.info("Parsing %s with Docling (pages %s)", pdf_path.name, page_range or "all")
         kwargs = {"page_range": page_range} if page_range else {}
         doc = self.converter.convert(str(pdf_path), **kwargs).document
+        blocks: list[dict[str, Any]] = []
 
-        chunks: list[dict[str, Any]] = []
+        def add(item: Any, block_type: str, idx: int, text: str) -> None:
+            prov = getattr(item, "prov", None)
+            if text.strip():
+                blocks.append({"source": source, "page": prov[0].page_no if prov else None,
+                               "block_type": block_type, "block_index": idx, "text": text.strip()})
 
         for idx, item in enumerate(getattr(doc, "texts", [])):
-            text = (getattr(item, "text", "") or "").strip()
-            if len(text) < MIN_TEXT_LEN:
-                continue
-            prov = getattr(item, "prov", None)
-            page = prov[0].page_no if prov else None
-            for k, piece in enumerate(_split(text)):
-                chunks.append({
-                    "text": piece,
-                    "page": page,
-                    "block_type": "text",
-                    "block_index": idx if k == 0 else f"{idx}.{k}",
-                    "source": source,
-                })
-
+            add(item, "text", idx, getattr(item, "text", "") or "")
         for idx, table in enumerate(getattr(doc, "tables", [])):
             try:
                 md = table.export_to_markdown(doc=doc)
@@ -137,22 +113,8 @@ class DoclingTextRetriever:
             except Exception as e:  # noqa: BLE001
                 log.warning("Table %d export failed: %s", idx, e)
                 continue
-            md = (md or "").strip()
-            if len(md) < MIN_TEXT_LEN:
-                continue
-            prov = getattr(table, "prov", None)
-            page = prov[0].page_no if prov else None
-            for k, piece in enumerate(_split(md)):
-                chunks.append({
-                    "text": piece,
-                    "page": page,
-                    "block_type": "table",
-                    "block_index": idx if k == 0 else f"{idx}.{k}",
-                    "source": source,
-                })
-
-        log.info("%s: extracted %d chunks (text + table)", pdf_path.name, len(chunks))
-        return chunks
+            add(table, "table", idx, md or "")
+        return blocks
 
     def index(
         self,
@@ -161,42 +123,29 @@ class DoclingTextRetriever:
         batch_size: int = 32,
         page_range: tuple[int, int] | None = None,
     ) -> dict[str, Any]:
-        """Parse ``pdf_path`` (or a page range), embed, upsert. Idempotent via stable UUIDs."""
+        """Parse ``pdf_path`` (or a page range), chunk, embed, upsert. Returns stats plus the raw ``blocks``."""
         pdf_path = Path(pdf_path)
         source = source or pdf_path.name
+        blocks = self._raw_blocks(pdf_path, source=source, page_range=page_range)
+        stats = self.index_blocks(blocks, batch_size=batch_size)
+        return {"source": source, "blocks": blocks, **stats}
+
+    def index_blocks(self, blocks: list[dict[str, Any]], batch_size: int = 32) -> dict[str, Any]:
+        """Chunk raw blocks (see retriever/chunking.py), embed context + text, upsert. Idempotent via stable UUIDs."""
         self.ensure_collection()
-
-        chunks = self._extract_chunks(pdf_path, source=source, page_range=page_range)
-        if not chunks:
-            return {"source": source, "chunks": 0, "collection": self.collection}
-
-        texts = [c["text"] for c in chunks]
-        vectors = self.embedder.encode(
-            texts,
-            batch_size=batch_size,
-            normalize_embeddings=True,
-            show_progress_bar=False,
-        )
-
-        points = [
-            PointStruct(
-                id=_chunk_id(c["source"], c["block_type"], c["page"], c["block_index"]),
-                vector=v.tolist(),
-                payload=c,
-            )
-            for c, v in zip(chunks, vectors, strict=True)
-        ]
-        self.client.upsert(collection_name=self.collection, points=points)
-
+        chunks = build_chunks(blocks)
         by_type = {"text": 0, "table": 0}
+        for i in range(0, len(chunks), 256):
+            part = chunks[i:i + 256]
+            vectors = self.embedder.encode([embed_text(c) for c in part], batch_size=batch_size,
+                                           normalize_embeddings=True, show_progress_bar=False)
+            self.client.upsert(collection_name=self.collection, points=[
+                PointStruct(id=_chunk_id(c["source"], c["block_type"], c["page"], c["block_index"]),
+                            vector=v.tolist(), payload=c)
+                for c, v in zip(part, vectors, strict=True)])
         for c in chunks:
             by_type[c["block_type"]] += 1
-        return {
-            "source": source,
-            "chunks": len(chunks),
-            "by_type": by_type,
-            "collection": self.collection,
-        }
+        return {"chunks": len(chunks), "by_type": by_type, "collection": self.collection}
 
     # ─── Search ───────────────────────────────────────────────────────────
 

@@ -28,7 +28,7 @@ from typing import Any, Callable
 import numpy as np
 from dotenv import load_dotenv
 
-from pharma_vision_rag.eval.metrics import first_gold_rank, ndcg_at_k, ranked_pages, recall_at_k
+from pharma_vision_rag.eval.metrics import first_gold_rank, gold_groups, ndcg_at_k, ranked_pages, recall_at_k
 
 ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(ROOT / ".env")
@@ -110,14 +110,13 @@ def run(variants: dict[str, Search]) -> list[dict[str, Any]]:
     rows = []
     for name, search in variants.items():
         for q in qs:
-            gold = {(g["source"], int(g["page"])) for g in q["gold_pages"]}
-            amb = q["period_spec"] == "ambiguous"
+            gold = gold_groups(q)
             for lang in ("ko", "en"):
                 pages = ranked_pages(search(q[f"q_{lang}"]))
                 rows.append({
                     "variant": name, "id": q["id"], "type": q["type"], "lang": lang, "period_spec": q["period_spec"],
-                    "r@1": recall_at_k(pages, gold, 1, amb), "r@3": recall_at_k(pages, gold, 3, amb),
-                    "r@5": recall_at_k(pages, gold, 5, amb), "ndcg@5": round(ndcg_at_k(pages, gold, 5, amb), 4),
+                    "r@1": round(recall_at_k(pages, gold, 1), 4), "r@3": round(recall_at_k(pages, gold, 3), 4),
+                    "r@5": round(recall_at_k(pages, gold, 5), 4), "ndcg@5": round(ndcg_at_k(pages, gold, 5), 4),
                     "first_gold_rank": first_gold_rank(pages, gold) or "",
                     "top5": " ".join(f"{s}:{p}" for s, p in pages[:5]),
                 })

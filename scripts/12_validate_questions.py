@@ -3,11 +3,12 @@
 Checks (fail):
   - 30 questions, unique ids, required fields, type in A/B/C/D, block_type in chart/table/text
   - distribution: A10 / B10 / C5 / D5, explicit 25 / ambiguous 5
-  - explicit questions of type A/B/C have gold pages in a single source (D may span sources)
+  - gold_pages lists every acceptable page; type D also has gold_groups (one group of alternates per hop)
   - every gold page exists in eval/page_inventory.csv
   - type A gold pages include at least one page tagged chart in the inventory
   - every answer_key string is found in the extracted text of at least one gold page,
     unless needs_review or visual_only is true (chart labels rasterized / values read from bar height)
+  - explicit B/C questions: no non-gold page may contain every answer_key (incomplete gold deflates recall)
 Report (warn only):
   - answer leakage: type A answer_keys that also appear on non-gold pages of Q1/Q2/Q3.pdf
     (text-only path could answer from the press release instead of the chart)
@@ -84,10 +85,12 @@ def main() -> int:
         for gp in q["gold_pages"]:
             if (gp["source"], gp["page"]) not in inv:
                 errors.append(f"{qid}: gold page {gp['source']} p{gp['page']} not in inventory")
-        sources = {gp["source"] for gp in q["gold_pages"]}
-        if q["period_spec"] == "explicit" and q["type"] != "D" and len(q["gold_pages"]) > 1 and len(sources) > 1:
-            # allow duplicates only when the same value is on a PR table and its deck chart
-            pass
+        if q.get("gold_groups"):  # multi-hop: groups must partition gold_pages exactly
+            flat = [(g["source"], g["page"]) for grp in q["gold_groups"] for g in grp]
+            if sorted(flat) != sorted((g["source"], g["page"]) for g in q["gold_pages"]):
+                errors.append(f"{qid}: gold_groups and gold_pages list different pages")
+        elif q["type"] == "D":
+            errors.append(f"{qid}: multi-hop question needs gold_groups (one group per hop)")
         if q["type"] == "A":
             if not any(inv.get((gp["source"], gp["page"])) == "chart" for gp in q["gold_pages"]):
                 errors.append(f"{qid}: type A but no gold page tagged chart")
@@ -97,6 +100,12 @@ def main() -> int:
                 found = any(norm(key) in norm(page_text(gp["source"], gp["page"])) for gp in q["gold_pages"])
                 if not found:
                     errors.append(f"{qid}: answer_key '{key}' not found in text of any gold page")
+        # gold completeness: any non-gold page whose text holds ALL answer keys is a missing gold page
+        if q["type"] in "BC" and q["period_spec"] == "explicit" and q["answer_keys"] and not q["visual_only"]:
+            gold_set = {(gp["source"], gp["page"]) for gp in q["gold_pages"]}
+            for (src, pg) in inv:
+                if (src, pg) not in gold_set and all(norm(k) in norm(page_text(src, pg)) for k in q["answer_keys"]):
+                    errors.append(f"{qid}: {src} p{pg} contains every answer_key but is not in gold_pages")
         # leakage report for chart questions
         if q["type"] == "A" and q["period_spec"] == "explicit":
             gold = {(gp["source"], gp["page"]) for gp in q["gold_pages"]}

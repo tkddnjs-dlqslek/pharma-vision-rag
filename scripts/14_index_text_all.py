@@ -13,6 +13,7 @@ Usage:
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
@@ -30,6 +31,7 @@ from pharma_vision_rag.utils.pdf import page_count  # noqa: E402
 
 PDF_DIR = ROOT / "data" / "pdf"
 CORPUS = ["Q1.pdf", "Q2.pdf", "Q3.pdf", "20F_extract.pdf", "Q1_deck.pdf", "Q2_deck.pdf", "Q3_deck.pdf"]
+BLOCKS = ROOT / "data" / "embeddings" / "text_blocks.jsonl"  # raw Docling blocks; scripts/15 rebuilds the index from it
 WINDOW = 5  # pages per Docling conversion; ponytail: fixed, raise on a 32 GB box
 
 
@@ -37,6 +39,10 @@ def index_file(retriever: DoclingTextRetriever, name: str) -> dict:
     path = PDF_DIR / name
     n_pages = page_count(path)
     t0 = time.time()
+    BLOCKS.parent.mkdir(parents=True, exist_ok=True)
+    if BLOCKS.exists():  # drop this source's cached blocks before re-appending
+        kept = [l for l in open(BLOCKS, encoding="utf-8") if json.loads(l)["source"] != name]
+        open(BLOCKS, "w", encoding="utf-8").writelines(kept)
     # clean re-index: drop this source's old points so a changed chunking scheme leaves no orphans
     retriever.ensure_collection()
     retriever.client.delete(
@@ -48,6 +54,8 @@ def index_file(retriever: DoclingTextRetriever, name: str) -> dict:
     def run(rng: tuple[int, int]) -> None:
         nonlocal chunks
         s = retriever.index(path, source=name, page_range=rng)
+        with open(BLOCKS, "a", encoding="utf-8") as f:
+            f.writelines(json.dumps(b, ensure_ascii=False) + "\n" for b in s["blocks"])
         chunks += s["chunks"]
         for k in by_type:
             by_type[k] += s.get("by_type", {}).get(k, 0)
