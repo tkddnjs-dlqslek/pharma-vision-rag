@@ -6,7 +6,7 @@ scores page-level Recall@1/3/5 and NDCG@5 against gold_pages, writes one row per
 Variants (skipped with a message when their index/inputs are missing):
     text           BGE-M3 dense over Docling chunks
     text_rerank    text top-30 chunks -> bge-reranker-v2-m3
-    vision         Nemotron multi-vector; query embeddings read offline from data/embeddings/*/queries
+    vision         Nemotron ColEmbed exact MaxSim, precomputed by scripts/13_score_vision_exact.py
     caption        BGE-M3 over Haiku page captions
     hybrid         RRF(text, vision) with the keyword router weights from modes/hybrid.py
 QT / HyDE (Haiku query rewriting) and the generation + judge stage need ANTHROPIC_API_KEY; added with --generate later.
@@ -25,7 +25,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable
 
-import numpy as np
 from dotenv import load_dotenv
 
 from pharma_vision_rag.eval.metrics import first_gold_rank, gold_groups, ndcg_at_k, ranked_pages, recall_at_k
@@ -44,15 +43,15 @@ PAGE_POOL = 8     # pages per retriever fed to RRF (matches HybridMode)
 Search = Callable[[str, str], list[dict[str, Any]]]  # (question_id_lang, query_text) -> hits
 
 
-class OfflineQueryClient:
-    """Stands in for NemotronEmbeddingClient: query embeddings precomputed by scripts/embed_pages_gpu.py."""
+class ExactVisionRankings:
+    """Vision 'retriever' for the fixed benchmark queries: exact MaxSim rankings precomputed by
+    scripts/13_score_vision_exact.py (no vector DB; the 1,709-page patch index would be ~24 GB in Qdrant)."""
 
-    def __init__(self, root: Path) -> None:
-        manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-        self._by_text = {q["text"]: root / "queries" / f"{q['id']}.npy" for q in manifest["queries"]}
+    def __init__(self, path: Path) -> None:
+        self._ranked = json.loads(path.read_text(encoding="utf-8"))
 
-    def embed_query(self, query: str) -> np.ndarray:
-        return np.load(self._by_text[query]).astype(np.float32)
+    def search(self, query: str, k: int = 5) -> list[dict[str, Any]]:
+        return [{"source": s, "page": p, "score": sc} for s, p, sc in self._ranked[query][:k]]
 
 
 def _collection_count(name: str) -> int:
@@ -74,12 +73,11 @@ def build_variants(wanted: list[str]) -> dict[str, Search]:
         else:
             print("SKIP text variants: pharma_text is empty (run scripts/14_index_text_all.py)")
     if need_vision:
-        emb_roots = sorted(p.parent for p in EMB_DIR.glob("*/manifest.json"))
-        if emb_roots and _collection_count("pharma_vision"):
-            from pharma_vision_rag.retriever.nemotron import NemotronVisionRetriever
-            vision = NemotronVisionRetriever(OfflineQueryClient(emb_roots[-1]), qdrant_url=QDRANT_URL)
+        ranked = sorted(EMB_DIR.glob("*/vision_rankings.json"))
+        if ranked:
+            vision = ExactVisionRankings(ranked[-1])
         else:
-            print("SKIP vision variants: no data/embeddings/*/manifest.json or pharma_vision empty (run scripts/13)")
+            print("SKIP vision variants: no data/embeddings/*/vision_rankings.json (run scripts/13_score_vision_exact.py)")
 
     if text and "text" in wanted:
         def text_search(q: str) -> list[dict[str, Any]]:

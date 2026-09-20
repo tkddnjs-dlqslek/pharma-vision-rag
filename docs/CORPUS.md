@@ -1,5 +1,35 @@
 # 코퍼스 구성 (Phase 2, 2026-09-16 확정)
 
+## 0. 코퍼스 v2 (2026-09-20 확정): 27개 문서, 1,709페이지
+
+기준 파일은 `eval/corpus.json`(문서 id, 회사, 기간, 종류, 라벨, 페이지 수)이고 `scripts/11_build_corpus.py`가
+`data/pdf/raw/`와 `data/pdf/`의 원본을 `data/pdf/corpus/`에 통일된 이름으로 복사해 만든다.
+
+| 묶음 | 문서 | 페이지 |
+|---|---|---|
+| Sanofi 2025: 보도자료 Q1~Q4, 슬라이드 Q1~Q4, 20-F FY2025 전체 | 9 | 579 |
+| Sanofi 2024: 보도자료 Q1~Q4, 슬라이드 Q1~Q4, 20-F FY2024 전체 | 9 | 592 |
+| Novartis 2025 Q1~Q3 슬라이드 | 3 | 231 |
+| Roche 2025 Q1, 상반기, Q3 슬라이드 | 3 | 187 |
+| AstraZeneca 2025 Q1~Q3 슬라이드 | 3 | 120 |
+
+**왜 늘렸나**: v1의 172p는 긴 컨텍스트 창에 통째로 들어가 "그냥 다 넣으면 되지 않나"에 답할 수 없었다.
+**무엇을 넣었나**: 아무 문서가 아니라 헷갈리는 문서. 같은 회사의 전년 같은 분기, 경쟁사의 같은 분기처럼 구조가
+같고 숫자만 다른 페이지가 실제 업무의 검색 난이도를 만든다. 슬라이드 위주라 차트 밀도도 유지된다.
+**넣지 않은 것**: 컨퍼런스콜 녹취록(텍스트뿐이라 텍스트 경로에만 유리), ESG 보고서 등 질문을 만들 수 없는 자료.
+Eli Lilly 슬라이드는 IR 사이트의 봇 차단(HTTP 403)으로 받지 못했고 목표 분량을 이미 채워 제외했다.
+**상한**: 비전 패치 임베딩이 페이지당 수 MB라 이 개발 PC(16GB RAM, 디스크 여유 58GB)에서는 이 규모가 현실적 최대치.
+
+v1 문서 id와 발췌본 페이지 번호는 `scripts/11_build_corpus.py --migrate-v1`이 v2로 변환했다. 아래 2절과 3절의
+발췌 매핑 표는 그 변환의 근거로 남긴다.
+
+출처 URL 패턴: Sanofi 슬라이드 `sanofi.com/assets/dotcom/content-app/events/quaterly-results/<연도>/...`,
+Novartis `novartis.com/sites/novartis_com/files/q<N>-2025-investor-presentation.pdf`,
+AstraZeneca `astrazeneca.com/content/dam/az/PDF/2025/...`, Roche `assets.roche.com/f/176343/x/<해시>/irp<날짜>-a.pdf`
+(Roche는 해시가 매번 달라 행사 페이지에서 다시 찾아야 함).
+
+## v1 기록 (2026-09-16, 172페이지). 아래는 이력이며 현재 구성은 0절
+
 인덱싱 대상 7파일, **172페이지**. 빌드: `PYTHONIOENCODING=utf-8 python scripts/11_build_extracts.py`
 (페이지 목록은 스크립트 상수가 원본. 이 문서는 근거 기록).
 
