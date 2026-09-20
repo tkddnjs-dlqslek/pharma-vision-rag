@@ -2,13 +2,33 @@
 
 > 이 파일은 Claude Code가 세션 시작 시 자동으로 읽는다. 로컬(cmd)에서 작업을 이어갈 때
 > 필요한 컨텍스트를 여기서 확보하고, 실험 세부는 `docs/EXPERIMENT_PLAN.md`를 따른다.
-> 최종 갱신: 2026-09-20
+> 최종 갱신: 2026-09-21
 
 ## 한 줄 요약
 
 Sanofi 2025 공시 PDF(차트·표 밀집)에 **한국어로 질문**하면 영문 페이지를 찾아 답하는
 멀티모달 RAG를 **4가지 모드**로 구현하고 비교 벤치마크하는 포트폴리오 프로젝트.
 핵심 주장: *텍스트 경로를 QT+HyDE로 최적화해도 Vision/Hybrid 경로의 우위가 남는가.*
+
+## 진행 중 작업 (핸드오프, 2026-09-21). 컨텍스트 압축 뒤에는 여기부터 읽을 것
+
+**사용자 지시**: 답변은 짧게(결론 몇 줄, 표는 꼭 필요할 때 1개). 중간 알림은 문제 있을 때만. **`docs/REPORT.md` 같은 보고서 문서는 쓰지 말고, 끝나면 채팅으로 요약만.**
+API 키와 크레딧이 없어서 **답변 생성과 채점은 Anthropic API 대신 서브에이전트(Agent 도구, model "sonnet" = Sonnet 5)로 수행**한다. 캡션 인덱스는 보류. RunPod Pod는 삭제됨.
+
+**지금 하는 일: 답변 생성(blind) → 채점 → 방식별 정답률 요약**
+1. `scripts/17_make_generation_tasks.py`가 text_rerank, vision, hybrid_rerank의 질문별 상위 3페이지로 작업 331건을 만들었음
+   (`eval/results/gen_tasks/batch_00~27.json`, 12건씩, 정답과 방식 이름은 `key.json`에만 있음. 전부 gitignore).
+2. 묶음마다 서브에이전트 하나: 프롬프트는 "`eval/results/gen_tasks/INSTRUCTIONS.md`를 읽고 그대로 따를 것, 묶음 번호 NN". 결과는 `eval/results/gen_answers/batch_NN.jsonl`.
+   한 번에 3개씩 실행(사용량 한도 때문). **진행 상황은 `ls eval/results/gen_answers/*.jsonl`로 확인하고 없는 번호만 다시 실행.** 묶음당 약 16만 토큰, 3분.
+3. 28개가 다 모이면 `python scripts/18_score_generation.py prepare` → `eval/results/judge_tasks/batch_NN.json` 생성 →
+   채점 서브에이전트(질문, 기준 정답, 모델 답만 보고 correct/partial/wrong 판정, 방식은 모름)가 `eval/results/judge_verdicts/batch_NN.jsonl` 작성
+   (형식 `{"task_id","verdict","reason"}`) → `python scripts/18_score_generation.py report`로 방식별, 유형별, 언어별 정답률과 부호 검정.
+4. 그다음: agentic 모드도 서브에이전트로(검색 스크립트와 페이지 열기를 도구로 주고 120질의). 계획서 3.3절.
+
+**채점 때 같이 처리할 평가셋 결함 (질문 문구를 바꾸면 RunPod에서 질의 임베딩 재계산 필요, 약 $2)**
+- D03: 질문에 회사 이름이 없음(v1 잔재). 검색기가 Novartis 페이지를 가져옴. 이번 채점에서는 결함 문항으로 따로 표시.
+- A02: gold에 추가한 `sanofi_2024Q4_deck.pdf` p27의 2024년 2분기 값이 -238일 수 있음(2025 Q1 덱은 -201, Opella 제외 재작성). 페이지를 렌더해 확인 후 필요하면 gold에서 제거.
+- 교훈: gold는 텍스트 일치만으로 넣지 말고 반드시 렌더해서 확인(A05에서 틀린 적 있음). 서브에이전트 보고도 검증 후 반영.
 
 ## 현재 상태 (Phase 2 진행 중, 2026-09-20)
 
