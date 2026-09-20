@@ -15,7 +15,7 @@ Sanofi 2025 공시 PDF(차트·표 밀집)에 **한국어로 질문**하면 영�
 상세 현황표는 `docs/EXPERIMENT_PLAN.md` 0절. 요약:
 - **코퍼스 v2**: 27개 문서 1,709p (`eval/corpus.json`이 기준). Sanofi 2024와 2025 전체, Novartis, Roche, AstraZeneca 슬라이드.
   v1(172p)은 긴 컨텍스트에 통째로 들어가 RAG를 정당화할 수 없어서 확대함.
-- **평가셋**: 30문항 × 한/영, v2 문서 id로 이전됨. 60문항 확장과 A01, A03, A06 재설계가 남음.
+- **평가셋**: 60문항 × 한/영(A20, B20, C10, D10, 기간 모호 10). gold는 정답이 실린 모든 페이지, 멀티홉은 `gold_groups`. 외부 리뷰어 검토 미완.
 - **평가 코드**: `eval/metrics.py`, `eval/runner.py` 완성. v1 텍스트 기준선은 dense R@5 0.67, 리랭커 0.72(차트 0.40).
 - **인덱스**: `pharma_text`는 v1(172p)만 있음. v2 텍스트와 비전은 RunPod 실행 대기. 캡션은 Anthropic 키 대기.
 - Phase 1의 4모드(text_only, vision_only, caption, hybrid)와 LangGraph HybridGraph 코드는 그대로 있음.
@@ -44,7 +44,7 @@ Sanofi 2025 공시 PDF(차트·표 밀집)에 **한국어로 질문**하면 영�
 ```
 
 - **hybrid의 `route()`는 LLM이 아닌 키워드 if문**이고 RRF 가중치만 바꾼다. 조건부 엣지 없음.
-  → 이 프로젝트는 **agent가 아니라 결정론적 DAG 파이프라인**이다. 대외 설명 시 "agentic"이라 부르지 말 것.
+  → 기존 4모드는 **agent가 아니라 결정론적 DAG 파이프라인**이다. "agentic"은 계획 중인 E4 모드(계획서 3.3절)에만 쓴다.
 - Qdrant 컬렉션: `pharma_text`(dense) / `pharma_vision`(multi-vector 3072-d, MAX_SIM) / `pharma_caption`(dense).
   포인트 ID는 `uuid5(source:page)`로 결정적 → 재인덱싱 idempotent.
 
@@ -119,6 +119,7 @@ eval/          corpus.json, questions.jsonl, page_inventory.csv (커밋), result
 
 1. (사용자) RunPod에서 `embed_pages_gpu.py` 실행. 업로드 파일은 `data/embeddings/runpod_input.zip`. 먼저 `--smoke`로 패치 수와 예상 용량 확인.
 2. 산출물을 받아 `15`(텍스트 인덱스 v2)와 `13`(비전 순위) 실행, `runner --mode all`로 v2 검색 벤치마크.
-3. 평가셋을 60문항으로 확장: 연도 간, 회사 간 문항 추가, A01, A03, A06 재설계, gold 완전성 검사 통과.
-4. (사용자) `.env`에 `ANTHROPIC_API_KEY` → 캡션 인덱스, QT, HyDE, 답변 생성과 judge, "통째로 넣기" 비교군.
-5. E1, E2 실행 → `docs/REPORT.md`.
+3. (사용자) `.env`에 `ANTHROPIC_API_KEY` → 캡션 인덱스, QT, HyDE, 답변 생성과 judge, "통째로 넣기" 비교군.
+4. E1, E2 실행(고정 파이프라인 기준선).
+5. E4 agentic 모드 추가와 비교(`docs/EXPERIMENT_PLAN.md` 3.3절): tool use 기반 단일 agent, 다섯 번째 비교 대상.
+6. `docs/REPORT.md`.
