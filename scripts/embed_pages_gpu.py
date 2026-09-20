@@ -13,7 +13,8 @@ scripts/15_rebuild_text_index.py (text) and scripts/13_score_vision_exact.py (vi
 
 RunPod recipe (PyTorch template, 24 GB GPU, 40 GB volume):
     cd /workspace && mkdir -p input && unzip -o runpod_input.zip -d input
-    pip install -q "transformers>=4.45,<5" accelerate einops sentencepiece pypdfium2 Pillow huggingface_hub docling
+    pip install -q "transformers>=4.45,<5" accelerate einops sentencepiece pypdfium2 Pillow huggingface_hub hf_transfer docling
+    # hf_transfer: the RunPod PyTorch template sets HF_HUB_ENABLE_HF_TRANSFER=1 but does not ship the package
     python input/embed_pages_gpu.py --input input --out smoke --smoke     # ~3 min: 2 pages, queries, Docling on 2 pages
     python input/embed_pages_gpu.py --input input --out out --batch 4     # full run; resume-safe
     # no HF token needed: the model repo is public (gated=False, checked 2026-09-20; NVIDIA non-commercial license)
