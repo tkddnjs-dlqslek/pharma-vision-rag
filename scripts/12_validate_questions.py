@@ -4,13 +4,13 @@ Checks (fail):
   - 30 questions, unique ids, required fields, type in A/B/C/D, block_type in chart/table/text
   - distribution: A10 / B10 / C5 / D5, explicit 25 / ambiguous 5
   - gold_pages lists every acceptable page; type D also has gold_groups (one group of alternates per hop)
-  - every gold page exists in eval/page_inventory.csv
+  - every gold page exists in eval/corpus.json (document id + page range)
   - type A gold pages include at least one page tagged chart in the inventory
   - every answer_key string is found in the extracted text of at least one gold page,
     unless needs_review or visual_only is true (chart labels rasterized / values read from bar height)
   - explicit B/C questions: no non-gold page may contain every answer_key (incomplete gold deflates recall)
 Report (warn only):
-  - answer leakage: type A answer_keys that also appear on non-gold pages of Q1/Q2/Q3.pdf
+  - answer leakage: type A answer_keys that also appear on non-gold pages of any press release
     (text-only path could answer from the press release instead of the chart)
 
 Usage:
@@ -27,7 +27,10 @@ from pathlib import Path
 import pypdfium2 as pdfium
 
 ROOT = Path(__file__).resolve().parent.parent
-PDF_DIR = ROOT / "data" / "pdf"
+PDF_DIR = ROOT / "data" / "pdf" / "corpus"
+CORPUS = json.loads((ROOT / "eval" / "corpus.json").read_text(encoding="utf-8"))
+PAGES = {d["id"]: d["pages"] for d in CORPUS}
+PRESS_RELEASES = [d["id"] for d in CORPUS if d["kind"] == "pr"]
 QUESTIONS = ROOT / "eval" / "questions.jsonl"
 INVENTORY = ROOT / "eval" / "page_inventory.csv"
 
@@ -83,8 +86,8 @@ def main() -> int:
         if not q["gold_pages"]:
             errors.append(f"{qid}: no gold_pages")
         for gp in q["gold_pages"]:
-            if (gp["source"], gp["page"]) not in inv:
-                errors.append(f"{qid}: gold page {gp['source']} p{gp['page']} not in inventory")
+            if not 1 <= gp["page"] <= PAGES.get(gp["source"], 0):
+                errors.append(f"{qid}: gold page {gp['source']} p{gp['page']} not in eval/corpus.json")
         if q.get("gold_groups"):  # multi-hop: groups must partition gold_pages exactly
             flat = [(g["source"], g["page"]) for grp in q["gold_groups"] for g in grp]
             if sorted(flat) != sorted((g["source"], g["page"]) for g in q["gold_pages"]):
@@ -103,7 +106,7 @@ def main() -> int:
         # gold completeness: any non-gold page whose text holds ALL answer keys is a missing gold page
         if q["type"] in "BC" and q["period_spec"] == "explicit" and q["answer_keys"] and not q["visual_only"]:
             gold_set = {(gp["source"], gp["page"]) for gp in q["gold_pages"]}
-            for (src, pg) in inv:
+            for (src, pg) in ((d, n) for d, total in PAGES.items() for n in range(1, total + 1)):
                 if (src, pg) not in gold_set and all(norm(k) in norm(page_text(src, pg)) for k in q["answer_keys"]):
                     errors.append(f"{qid}: {src} p{pg} contains every answer_key but is not in gold_pages")
         # leakage report for chart questions
@@ -112,9 +115,8 @@ def main() -> int:
             for key in q["answer_keys"]:
                 if len(key.replace(",", "").replace(".", "").replace("-", "")) < 3:
                     continue  # too short to be meaningful
-                for src in ("Q1.pdf", "Q2.pdf", "Q3.pdf"):
-                    doc_n = len(pdfium.PdfDocument(str(PDF_DIR / src)))
-                    hits = [p for p in range(1, doc_n + 1)
+                for src in PRESS_RELEASES:
+                    hits = [p for p in range(1, PAGES[src] + 1)
                             if (src, p) not in gold and norm(key) in norm(page_text(src, p))]
                     if hits:
                         warns.append(f"{qid}: key '{key}' also on {src} pages {hits} (leakage risk)")

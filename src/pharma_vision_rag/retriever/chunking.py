@@ -13,22 +13,23 @@ Why each step exists (2026-09-19 baseline: R@5 0.40, appendix tables almost neve
 """
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Any
 
 MAX_CHUNK_CHARS = 1500
 MIN_TEXT_LEN = 10      # drop fragments shorter than this even after merging
 SHORT_TEXT_LEN = 40    # text blocks shorter than this are merged into the next block on the page
 
-DOC_LABELS = {
-    "Q1.pdf": "Sanofi Q1 2025 results press release",
-    "Q2.pdf": "Sanofi Q2 2025 (H1 2025) results press release",
-    "Q3.pdf": "Sanofi Q3 2025 (YTD 2025) results press release",
-    "20F_extract.pdf": "Sanofi Form 20-F annual report FY2025",
-    "Q1_deck.pdf": "Sanofi Q1 2025 results presentation slides",
-    "Q2_deck.pdf": "Sanofi Q2 2025 results presentation slides",
-    "Q3_deck.pdf": "Sanofi Q3 2025 results presentation slides",
-}
+def _load_labels() -> dict[str, str]:
+    manifest = Path(__file__).resolve().parents[3] / "eval" / "corpus.json"
+    if not manifest.exists():
+        return {}
+    return {d["id"]: d["label"] for d in json.loads(manifest.read_text(encoding="utf-8"))}
+
+
+DOC_LABELS = _load_labels()  # document id -> "Sanofi Q2 2025 results press release" (eval/corpus.json)
 _FOOTER = re.compile(r"^(SANOFI\s+(PRESS RELEASE|FORM 20-F)|\d+\s+Investor Relations|Investor Relations$|PART I+$|ITEM \d)", re.I)
 _TABLE_RULE = re.compile(r"^\|?\s*:?-{2,}")
 
@@ -135,18 +136,19 @@ def _self_check() -> None:
     assert compact_table("| a    |   b |\n|------|-----|\n| 1,0  |  x  |") == "| a | b |\n| --- | --- |\n| 1,0 | x |"
     assert sum(p.count("| Drug") for p in pieces) == 200, "rows lost"
     blocks = [
-        {"source": "Q2.pdf", "page": 13, "block_type": "text", "block_index": 1, "text": "Appendix 1: Q2 2025 net sales by medicine"},
-        {"source": "Q2.pdf", "page": 13, "block_type": "text", "block_index": 2, "text": "Dupixent"},
-        {"source": "Q2.pdf", "page": 13, "block_type": "text", "block_index": 3, "text": "Dupixent sales were EUR 3,832 million in the second quarter."},
-        {"source": "Q2.pdf", "page": 13, "block_type": "text", "block_index": 4, "text": "SANOFI PRESS RELEASE Q2 2025 13"},
-        {"source": "Q2.pdf", "page": 13, "block_type": "table", "block_index": 0, "text": table},
-        {"source": "Q2.pdf", "page": 14, "block_type": "text", "block_index": 5, "text": "End."},
+        {"source": "sanofi_2025Q2_pr.pdf", "page": 13, "block_type": "text", "block_index": 1, "text": "Appendix 1: Q2 2025 net sales by medicine"},
+        {"source": "sanofi_2025Q2_pr.pdf", "page": 13, "block_type": "text", "block_index": 2, "text": "Dupixent"},
+        {"source": "sanofi_2025Q2_pr.pdf", "page": 13, "block_type": "text", "block_index": 3, "text": "Dupixent sales were EUR 3,832 million in the second quarter."},
+        {"source": "sanofi_2025Q2_pr.pdf", "page": 13, "block_type": "text", "block_index": 4, "text": "SANOFI PRESS RELEASE Q2 2025 13"},
+        {"source": "sanofi_2025Q2_pr.pdf", "page": 13, "block_type": "table", "block_index": 0, "text": table},
+        {"source": "sanofi_2025Q2_pr.pdf", "page": 14, "block_type": "text", "block_index": 5, "text": "End."},
     ]
     out = build_chunks(blocks)
     texts = [c["text"] for c in out if c["block_type"] == "text"]
     assert not any("PRESS RELEASE" in t for t in texts), "footer kept"
     assert any(t.startswith("Dupixent\nDupixent sales") for t in texts), "short heading not merged forward"
-    assert all(c["context"].startswith("Sanofi Q2 2025") and "page 13" in c["context"] for c in out if c["page"] == 13)
+    assert all(c["context"].startswith(DOC_LABELS.get("sanofi_2025Q2_pr.pdf", "sanofi_2025Q2_pr.pdf"))
+               and "page 13" in c["context"] for c in out if c["page"] == 13)
     assert "Appendix 1" in out[0]["context"]
     assert not any(c["text"] == "End." for c in out), "sub-minimum fragment kept"
     assert len({(c["block_type"], c["block_index"]) for c in out}) == len(out), "duplicate ids"

@@ -1,0 +1,218 @@
+[
+ {
+  "id": "sanofi_2025Q1_pr.pdf",
+  "company": "Sanofi",
+  "period": "Q1 2025",
+  "kind": "pr",
+  "label": "Sanofi Q1 2025 results press release",
+  "pages": 23
+ },
+ {
+  "id": "sanofi_2025Q2_pr.pdf",
+  "company": "Sanofi",
+  "period": "Q2 2025",
+  "kind": "pr",
+  "label": "Sanofi Q2 2025 results press release",
+  "pages": 26
+ },
+ {
+  "id": "sanofi_2025Q3_pr.pdf",
+  "company": "Sanofi",
+  "period": "Q3 2025",
+  "kind": "pr",
+  "label": "Sanofi Q3 2025 results press release",
+  "pages": 28
+ },
+ {
+  "id": "sanofi_2025Q1_deck.pdf",
+  "company": "Sanofi",
+  "period": "Q1 2025",
+  "kind": "deck",
+  "label": "Sanofi Q1 2025 results presentation slides",
+  "pages": 41
+ },
+ {
+  "id": "sanofi_2025Q2_deck.pdf",
+  "company": "Sanofi",
+  "period": "Q2 2025",
+  "kind": "deck",
+  "label": "Sanofi Q2 2025 results presentation slides",
+  "pages": 41
+ },
+ {
+  "id": "sanofi_2025Q3_deck.pdf",
+  "company": "Sanofi",
+  "period": "Q3 2025",
+  "kind": "deck",
+  "label": "Sanofi Q3 2025 results presentation slides",
+  "pages": 43
+ },
+ {
+  "id": "sanofi_2025Q4_pr.pdf",
+  "company": "Sanofi",
+  "period": "Q4 and full-year 2025",
+  "kind": "pr",
+  "label": "Sanofi Q4 and full-year 2025 results press release",
+  "pages": 28
+ },
+ {
+  "id": "sanofi_2025Q4_deck.pdf",
+  "company": "Sanofi",
+  "period": "Q4 and full-year 2025",
+  "kind": "deck",
+  "label": "Sanofi Q4 and full-year 2025 results presentation slides",
+  "pages": 49
+ },
+ {
+  "id": "sanofi_20F_FY2025.pdf",
+  "company": "Sanofi",
+  "period": "FY2025",
+  "kind": "20F",
+  "label": "Sanofi FY2025 Form 20-F annual report",
+  "pages": 300
+ },
+ {
+  "id": "sanofi_2024Q1_pr.pdf",
+  "company": "Sanofi",
+  "period": "Q1 2024",
+  "kind": "pr",
+  "label": "Sanofi Q1 2024 results press release",
+  "pages": 24
+ },
+ {
+  "id": "sanofi_2024Q1_deck.pdf",
+  "company": "Sanofi",
+  "period": "Q1 2024",
+  "kind": "deck",
+  "label": "Sanofi Q1 2024 results presentation slides",
+  "pages": 42
+ },
+ {
+  "id": "sanofi_2024Q2_pr.pdf",
+  "company": "Sanofi",
+  "period": "Q2 2024",
+  "kind": "pr",
+  "label": "Sanofi Q2 2024 results press release",
+  "pages": 49
+ },
+ {
+  "id": "sanofi_2024Q2_deck.pdf",
+  "company": "Sanofi",
+  "period": "Q2 2024",
+  "kind": "deck",
+  "label": "Sanofi Q2 2024 results presentation slides",
+  "pages": 40
+ },
+ {
+  "id": "sanofi_2024Q3_pr.pdf",
+  "company": "Sanofi",
+  "period": "Q3 2024",
+  "kind": "pr",
+  "label": "Sanofi Q3 2024 results press release",
+  "pages": 26
+ },
+ {
+  "id": "sanofi_2024Q3_deck.pdf",
+  "company": "Sanofi",
+  "period": "Q3 2024",
+  "kind": "deck",
+  "label": "Sanofi Q3 2024 results presentation slides",
+  "pages": 36
+ },
+ {
+  "id": "sanofi_2024Q4_pr.pdf",
+  "company": "Sanofi",
+  "period": "Q4 and full-year 2024",
+  "kind": "pr",
+  "label": "Sanofi Q4 and full-year 2024 results press release",
+  "pages": 26
+ },
+ {
+  "id": "sanofi_2024Q4_deck.pdf",
+  "company": "Sanofi",
+  "period": "Q4 and full-year 2024",
+  "kind": "deck",
+  "label": "Sanofi Q4 and full-year 2024 results presentation slides",
+  "pages": 42
+ },
+ {
+  "id": "sanofi_20F_FY2024.pdf",
+  "company": "Sanofi",
+  "period": "FY2024",
+  "kind": "20F",
+  "label": "Sanofi FY2024 Form 20-F annual report",
+  "pages": 307
+ },
+ {
+  "id": "novartis_2025Q1_deck.pdf",
+  "company": "Novartis",
+  "period": "Q1 2025",
+  "kind": "deck",
+  "label": "Novartis Q1 2025 results presentation slides",
+  "pages": 73
+ },
+ {
+  "id": "novartis_2025Q2_deck.pdf",
+  "company": "Novartis",
+  "period": "Q2 2025",
+  "kind": "deck",
+  "label": "Novartis Q2 2025 results presentation slides",
+  "pages": 79
+ },
+ {
+  "id": "novartis_2025Q3_deck.pdf",
+  "company": "Novartis",
+  "period": "Q3 2025",
+  "kind": "deck",
+  "label": "Novartis Q3 2025 results presentation slides",
+  "pages": 79
+ },
+ {
+  "id": "roche_2025Q1_deck.pdf",
+  "company": "Roche",
+  "period": "Q1 2025",
+  "kind": "deck",
+  "label": "Roche Q1 2025 results presentation slides",
+  "pages": 56
+ },
+ {
+  "id": "roche_2025Q2_deck.pdf",
+  "company": "Roche",
+  "period": "Q2 2025",
+  "kind": "deck",
+  "label": "Roche Q2 2025 results presentation slides",
+  "pages": 75
+ },
+ {
+  "id": "roche_2025Q3_deck.pdf",
+  "company": "Roche",
+  "period": "Q3 2025",
+  "kind": "deck",
+  "label": "Roche Q3 2025 results presentation slides",
+  "pages": 56
+ },
+ {
+  "id": "astrazeneca_2025Q1_deck.pdf",
+  "company": "AstraZeneca",
+  "period": "Q1 2025",
+  "kind": "deck",
+  "label": "AstraZeneca Q1 2025 results presentation slides",
+  "pages": 40
+ },
+ {
+  "id": "astrazeneca_2025Q2_deck.pdf",
+  "company": "AstraZeneca",
+  "period": "Q2 2025",
+  "kind": "deck",
+  "label": "AstraZeneca Q2 2025 results presentation slides",
+  "pages": 41
+ },
+ {
+  "id": "astrazeneca_2025Q3_deck.pdf",
+  "company": "AstraZeneca",
+  "period": "Q3 2025",
+  "kind": "deck",
+  "label": "AstraZeneca Q3 2025 results presentation slides",
+  "pages": 39
+ }
+]

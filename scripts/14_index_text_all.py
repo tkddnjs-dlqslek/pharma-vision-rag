@@ -1,11 +1,12 @@
-"""Index the full 7-file corpus into the ``pharma_text`` collection (Docling + BGE-M3).
+"""Index the corpus listed in eval/corpus.json into the ``pharma_text`` collection (Docling + BGE-M3).
 
 Phase 1 hit ``std::bad_alloc`` inside Docling on dense pages (Q1 p16/17/21) and the first Phase 2 run
 was OOM-killed converting a whole file (16 GB RAM, ~3 GB free). Strategy: convert in fixed page windows
 (WINDOW pages at a time, bounded memory); a window that raises is retried one page at a time; pages that
 still fail are reported as known gaps in the text index.
 
-Local CPU only, no API. BGE-M3 (~2.3 GB) downloads on first run.
+Local CPU only, no API (~50 s/page: fine for a few files, not for the full 1,709-page corpus —
+the full run extracts Docling blocks on the GPU box, see scripts/embed_pages_gpu.py, then scripts/15 rebuilds the index).
 
 Usage:
     PYTHONIOENCODING=utf-8 python scripts/14_index_text_all.py            # all 7 files
@@ -29,8 +30,8 @@ load_dotenv(ROOT / ".env")
 from pharma_vision_rag.retriever import DoclingTextRetriever  # noqa: E402
 from pharma_vision_rag.utils.pdf import page_count  # noqa: E402
 
-PDF_DIR = ROOT / "data" / "pdf"
-CORPUS = ["Q1.pdf", "Q2.pdf", "Q3.pdf", "20F_extract.pdf", "Q1_deck.pdf", "Q2_deck.pdf", "Q3_deck.pdf"]
+PDF_DIR = ROOT / "data" / "pdf" / "corpus"
+CORPUS = [d["id"] for d in json.loads((ROOT / "eval" / "corpus.json").read_text(encoding="utf-8"))]
 BLOCKS = ROOT / "data" / "embeddings" / "text_blocks.jsonl"  # raw Docling blocks; scripts/15 rebuilds the index from it
 WINDOW = 5  # pages per Docling conversion; ponytail: fixed, raise on a 32 GB box
 
