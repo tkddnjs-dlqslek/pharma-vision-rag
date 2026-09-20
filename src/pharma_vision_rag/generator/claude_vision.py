@@ -29,7 +29,7 @@ DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_MAX_TOKENS = 1024
 MAX_CACHED_IMAGES = 3  # + 1 for system prompt = 4 breakpoints (the API cap)
 
-DEFAULT_SYSTEM_PROMPT = """You are a pharma analyst answering questions about Sanofi's public disclosures (Form 20-F, quarterly press releases, clinical trial summaries).
+DEFAULT_SYSTEM_PROMPT = """You are a pharma analyst answering questions about pharma companies' public disclosures (Sanofi, Novartis, Roche, AstraZeneca: Form 20-F, quarterly press releases, results presentation slides).
 
 Rules:
 - Answer ONLY from the provided page images. If the answer is not on the pages, reply "정보를 찾을 수 없습니다." (Korean questions) or "Not found in the provided pages." (English questions).

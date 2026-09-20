@@ -70,6 +70,11 @@ scripts/15_rebuild_text_index.py  블록 캐시에서 재청킹, 재임베딩 (D
 scripts/16_make_runpod_bundle.py  RunPod 업로드용 zip 생성
 scripts/embed_pages_gpu.py        RunPod 전용: Nemotron 페이지와 질의 임베딩 + Docling 블록 추출
 scripts/text_retrieval_gpu.py     RunPod 전용: 청킹, BGE-M3 임베딩, 질의별 정확 코사인 top-30, 리랭커 순위
+src/.../eval/generate.py          검색 상위 3장 → Sonnet 답변 생성(3회 반복, 비용 기록, 이어하기, --dry-run)
+src/.../eval/judge.py             Haiku 채점(정답/부분/오답), 유형과 언어별 집계
+src/.../eval/pricing.py           토큰 단가 상수. **보고 전에 현재 가격과 대조할 것**
+src/.../modes/agentic.py          E4: tool use 단일 agent(도구 6개, 최대 10회). **파일을 직접 실행할 것**(`-m`으로 돌리면 `modes/__init__`이 torch를 불러 76초)
+tests/test_eval_generation.py     가짜 클라이언트로 14개 테스트(네트워크 없음)
 src/.../retriever/bm25.py         Okapi BM25 (stdlib + numpy, 모델 없음). runner의 bm25, text_bm25, hybrid_bm25 변형
 src/.../retriever/chunking.py     블록 → 청크 규칙 (표 머리글 유지, 짧은 조각 병합, 문서 라벨 접두어). 자체 테스트 포함
 notebooks/     01 Nemotron smoke, 02 Colab 터널 (deprecated)
@@ -123,7 +128,9 @@ eval/          corpus.json, questions.jsonl, page_inventory.csv (커밋), result
 ## 다음 할 일
 
 1. (사용자) `.env`에 `ANTHROPIC_API_KEY` → 캡션 인덱스, QT, HyDE, 답변 생성과 judge, "통째로 넣기" 비교군.
-2. E1, E2의 생성 단계 실행(검색 단계는 완료).
-3. E4 agentic 모드 추가와 비교(`docs/EXPERIMENT_PLAN.md` 3.3절): tool use 기반 단일 agent, 다섯 번째 비교 대상.
+2. 10문항 파일럿으로 비용 확인 후 E1, E2의 생성 단계 실행(검색 단계는 완료, 코드는 작성됨):
+   `python -m pharma_vision_rag.eval.generate --variant vision --limit 10` → `python -m pharma_vision_rag.eval.judge --variant vision`.
+3. E4 agentic 모드 실행과 비교(코드 작성됨, **실제 API로는 미검증**): `python src/pharma_vision_rag/modes/agentic.py --limit 10` → judge.
+   미검증 가정: tool_result 안의 이미지 블록, `tool_choice`로 final_answer 강제, 모델 id 유효성. 첫 실행에서 확인할 것.
 4. 외부 리뷰어의 질문 검토. 문구가 바뀌면 RunPod에서 질의 임베딩과 순위 재계산.
 5. `docs/REPORT.md`.
