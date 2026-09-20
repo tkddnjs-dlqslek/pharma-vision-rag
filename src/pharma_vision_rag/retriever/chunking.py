@@ -15,12 +15,22 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
 MAX_CHUNK_CHARS = 1500
 MIN_TEXT_LEN = 10      # drop fragments shorter than this even after merging
 SHORT_TEXT_LEN = 40    # text blocks shorter than this are merged into the next block on the page
+
+# Stable UUID namespace so re-indexing the same (source, block) upserts cleanly.
+_NS = uuid.UUID("0f4cf7cb-9e3e-4cfa-a5d1-d9b64a4f2fe1")
+
+
+def chunk_id(chunk: dict[str, Any]) -> str:
+    # page is part of the id: block_index restarts in every Docling page window
+    return str(uuid.uuid5(_NS, f"{chunk['source']}:{chunk['block_type']}:{chunk['page']}:{chunk['block_index']}"))
+
 
 def _load_labels() -> dict[str, str]:
     manifest = Path(__file__).resolve().parents[3] / "eval" / "corpus.json"

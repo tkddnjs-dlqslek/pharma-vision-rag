@@ -9,6 +9,7 @@ Variants (skipped with a message when their index/inputs are missing):
     vision         Nemotron ColEmbed exact MaxSim, precomputed by scripts/13_score_vision_exact.py
     caption        BGE-M3 over Haiku page captions
     hybrid         RRF(text, vision) with the keyword router weights from modes/hybrid.py
+    hybrid_rerank  same fusion with the reranked text side (strongest text path + vision)
 QT / HyDE (Haiku query rewriting) and the generation + judge stage need ANTHROPIC_API_KEY; added with --generate later.
 
 Usage:
@@ -36,22 +37,29 @@ RESULTS = ROOT / "eval" / "results"
 EMB_DIR = ROOT / "data" / "embeddings"
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6335")
 CHUNK_POOL = 30   # chunks fetched before collapsing to pages / reranking
-CANDIDATES = RESULTS / "text_candidates.json"  # query -> dense top-CHUNK_POOL chunks
-_candidates: dict[str, list[dict[str, Any]]] = {}
 PAGE_POOL = 8     # pages per retriever fed to RRF (matches HybridMode)
 
 Search = Callable[[str, str], list[dict[str, Any]]]  # (question_id_lang, query_text) -> hits
 
 
-class ExactVisionRankings:
-    """Vision 'retriever' for the fixed benchmark queries: exact MaxSim rankings precomputed by
-    scripts/13_score_vision_exact.py (no vector DB; the 1,709-page patch index would be ~24 GB in Qdrant)."""
+class PrecomputedHits:
+    """Hits for the fixed benchmark queries, computed on the GPU box and read from JSON: {query: [hit, ...]}.
+
+    vision : scripts/13_score_vision_exact.py      -> [[doc, page, score], ...]   (exact MaxSim, no vector DB)
+    text   : scripts/text_retrieval_gpu.py         -> [chunk dict + score, ...]   (exact cosine / bge-reranker order)
+    The 16 GB dev PC cannot hold the models; live retrievers remain the fallback when no file is present."""
 
     def __init__(self, path: Path) -> None:
-        self._ranked = json.loads(path.read_text(encoding="utf-8"))
+        self._hits = json.loads(path.read_text(encoding="utf-8"))
 
     def search(self, query: str, k: int = 5) -> list[dict[str, Any]]:
-        return [{"source": s, "page": p, "score": sc} for s, p, sc in self._ranked[query][:k]]
+        hits = self._hits[query][:k]
+        return [h if isinstance(h, dict) else {"source": h[0], "page": h[1], "score": h[2]} for h in hits]
+
+
+def _latest(pattern: str) -> Path | None:
+    found = sorted(EMB_DIR.glob(pattern))
+    return found[-1] if found else None
 
 
 def _collection_count(name: str) -> int:
@@ -62,57 +70,63 @@ def _collection_count(name: str) -> int:
 
 def build_variants(wanted: list[str]) -> dict[str, Search]:
     variants: dict[str, Search] = {}
-    need_text = {"text", "hybrid"} & set(wanted) or ("text_rerank" in wanted and not CANDIDATES.exists())
-    need_vision = {"vision", "hybrid"} & set(wanted)
-    text = vision = None
+    want = set(wanted)
+    text = rerank = vision = None
 
-    if need_text:
-        if _collection_count("pharma_text"):
+    dense_file, rerank_file = _latest("*/text/text_candidates.json"), _latest("*/text/text_reranked.json")
+    if want & {"text", "hybrid"} or ("text_rerank" in want and not rerank_file):
+        if dense_file:
+            text = PrecomputedHits(dense_file)
+        elif _collection_count("pharma_text"):
             from pharma_vision_rag.retriever.docling_text import DoclingTextRetriever
             text = DoclingTextRetriever(qdrant_url=QDRANT_URL)
         else:
-            print("SKIP text variants: pharma_text is empty (run scripts/14_index_text_all.py)")
-    if need_vision:
-        ranked = sorted(EMB_DIR.glob("*/vision_rankings.json"))
+            print("SKIP text variants: no precomputed text hits and pharma_text is empty")
+    if want & {"text_rerank", "hybrid_rerank"}:
+        if rerank_file:
+            rerank = PrecomputedHits(rerank_file)
+        elif text:
+            from pharma_vision_rag.rerank.zerank2 import ZeRank2Reranker
+            rr, base = ZeRank2Reranker(), text
+
+            class _Live:
+                def search(self, q: str, k: int = CHUNK_POOL) -> list[dict[str, Any]]:
+                    return rr.rerank(q, base.search(q, k=CHUNK_POOL), top_k=k)
+            rerank = _Live()
+    if want & {"vision", "hybrid", "hybrid_rerank"}:
+        ranked = _latest("*/vision_rankings.json")
         if ranked:
-            vision = ExactVisionRankings(ranked[-1])
+            vision = PrecomputedHits(ranked)
         else:
             print("SKIP vision variants: no data/embeddings/*/vision_rankings.json (run scripts/13_score_vision_exact.py)")
 
-    if text and "text" in wanted:
-        def text_search(q: str) -> list[dict[str, Any]]:
-            hits = text.search(q, k=CHUNK_POOL)
-            _candidates[q] = hits  # saved for a later rerank-only run
-            return hits
-        variants["text"] = text_search
-    if "text_rerank" in wanted and "text" not in wanted and CANDIDATES.exists():
-        # rerank-only run: dense candidates come from the cache, so BGE-M3 and the reranker (2.3 GB each)
-        # never sit in RAM together. The 16 GB dev box could not hold both.
-        from pharma_vision_rag.rerank.zerank2 import ZeRank2Reranker
-        cached = json.loads(CANDIDATES.read_text(encoding="utf-8"))
-        rr = ZeRank2Reranker()
-        variants["text_rerank"] = lambda q: rr.rerank(q, [dict(h) for h in cached[q]], top_k=CHUNK_POOL)
-    elif text and "text_rerank" in wanted:
-        from pharma_vision_rag.rerank.zerank2 import ZeRank2Reranker
-        rr = ZeRank2Reranker()
-        variants["text_rerank"] = lambda q: rr.rerank(q, text.search(q, k=CHUNK_POOL), top_k=CHUNK_POOL)
-    if vision and "vision" in wanted:
+    if text and "text" in want:
+        variants["text"] = lambda q: text.search(q, k=CHUNK_POOL)
+    if rerank and "text_rerank" in want:
+        variants["text_rerank"] = lambda q: rerank.search(q, k=CHUNK_POOL)
+    if vision and "vision" in want:
         variants["vision"] = lambda q: vision.search(q, k=PAGE_POOL)
-    if "caption" in wanted:
+    if "caption" in want:
         if _collection_count("pharma_caption"):
             from pharma_vision_rag.retriever.caption import CaptionRetriever
             cap = CaptionRetriever(qdrant_url=QDRANT_URL)
             variants["caption"] = lambda q: cap.search(q, k=PAGE_POOL)
         else:
             print("SKIP caption: pharma_caption is empty (run scripts/08_index_captions.py, needs ANTHROPIC_API_KEY)")
-    if text and vision and "hybrid" in wanted:
+
+    def fuse(text_side) -> Search:
         from pharma_vision_rag.modes.hybrid import route, rrf_merge
 
         def hybrid(q: str) -> list[dict[str, Any]]:
             w = route(q)
-            t_pages = [{"source": s, "page": p} for s, p in ranked_pages(text.search(q, k=CHUNK_POOL))[:PAGE_POOL]]
+            t_pages = [{"source": s, "page": p} for s, p in ranked_pages(text_side.search(q, k=CHUNK_POOL))[:PAGE_POOL]]
             return rrf_merge(t_pages, vision.search(q, k=PAGE_POOL), w["w_text"], w["w_vision"])
-        variants["hybrid"] = hybrid
+        return hybrid
+
+    if text and vision and "hybrid" in want:
+        variants["hybrid"] = fuse(text)
+    if rerank and vision and "hybrid_rerank" in want:
+        variants["hybrid_rerank"] = fuse(rerank)
     return variants
 
 
@@ -151,15 +165,13 @@ def summarize(rows: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", default="all", help="all or comma list: text,text_rerank,vision,caption,hybrid")
+    ap.add_argument("--mode", default="all", help="all or comma list: text,text_rerank,vision,caption,hybrid,hybrid_rerank")
     a = ap.parse_args()
-    wanted = ["text", "text_rerank", "vision", "caption", "hybrid"] if a.mode == "all" else a.mode.split(",")
+    wanted = ["text", "text_rerank", "vision", "caption", "hybrid", "hybrid_rerank"] if a.mode == "all" else a.mode.split(",")
     rows = run(build_variants(wanted))
     if not rows:
         raise SystemExit("no variant available")
     RESULTS.mkdir(parents=True, exist_ok=True)
-    if _candidates:
-        CANDIDATES.write_text(json.dumps(_candidates, ensure_ascii=False), encoding="utf-8")
     out = RESULTS / f"retrieval_{'-'.join(sorted({r['variant'] for r in rows}))}.csv"
     with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))

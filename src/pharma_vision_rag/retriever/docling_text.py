@@ -13,7 +13,6 @@ compose around this class by rewriting the query before calling ``search``.
 from __future__ import annotations
 
 import logging
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +23,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 from sentence_transformers import SentenceTransformer
 
-from pharma_vision_rag.retriever.chunking import build_chunks, embed_text
+from pharma_vision_rag.retriever.chunking import build_chunks, chunk_id, embed_text
 
 log = logging.getLogger(__name__)
 
@@ -33,13 +32,8 @@ DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
 EMBED_DIM = 1024
 EMBED_MAX_SEQ = 1024    # BGE-M3 default 8192; CPU attention cost is quadratic and chunks are <= 1500 chars
 
-# Stable UUID namespace so re-indexing the same (source, block) upserts cleanly.
-_NS = uuid.UUID("0f4cf7cb-9e3e-4cfa-a5d1-d9b64a4f2fe1")
 
 
-def _chunk_id(source: str, block_type: str, page: int | None, block_index: int | str) -> str:
-    # page is part of the id: per-page fallback conversions restart block_index at 0
-    return str(uuid.uuid5(_NS, f"{source}:{block_type}:{page}:{block_index}"))
 
 
 class DoclingTextRetriever:
@@ -140,7 +134,7 @@ class DoclingTextRetriever:
             vectors = self.embedder.encode([embed_text(c) for c in part], batch_size=batch_size,
                                            normalize_embeddings=True, show_progress_bar=False)
             self.client.upsert(collection_name=self.collection, points=[
-                PointStruct(id=_chunk_id(c["source"], c["block_type"], c["page"], c["block_index"]),
+                PointStruct(id=chunk_id(c),
                             vector=v.tolist(), payload=c)
                 for c, v in zip(part, vectors, strict=True)])
         for c in chunks:
