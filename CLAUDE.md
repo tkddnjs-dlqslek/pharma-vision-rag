@@ -16,8 +16,8 @@ Sanofi 2025 공시 PDF(차트·표 밀집)에 **한국어로 질문**하면 영�
 - **코퍼스 v2**: 27개 문서 1,709p (`eval/corpus.json`이 기준). Sanofi 2024와 2025 전체, Novartis, Roche, AstraZeneca 슬라이드.
   v1(172p)은 긴 컨텍스트에 통째로 들어가 RAG를 정당화할 수 없어서 확대함.
 - **평가셋**: 60문항 × 한/영(A20, B20, C10, D10, 기간 모호 10). gold는 정답이 실린 모든 페이지, 멀티홉은 `gold_groups`. 외부 리뷰어 검토 미완.
-- **v2 검색 벤치마크 완료**(120질의, R@5): text 0.63, text_rerank 0.69, **vision 0.84**, hybrid 0.81, hybrid_rerank 0.84.
-  차트는 text_rerank 0.70 대 vision 0.97(p=0.003). 멀티홉은 전부 0.28~0.42. 상세와 해석은 계획서 0절.
+- **v2 검색 벤치마크 완료**(120질의, R@5): text 0.66, text_rerank 0.70, text_bm25 0.67, **vision 0.84**, hybrid_rerank 0.86.
+  차트는 text_rerank 0.72 대 vision 0.97(p=0.006). BM25는 효과 없음. 멀티홉은 전부 0.22~0.43. 상세는 계획서 0절, 실패 유형은 `docs/FAILURE_ANALYSIS.md`.
 - **인덱스**: 텍스트와 비전은 RunPod에서 계산해 `data/embeddings/v2/`에 결과만 보관. `runner`는 그 파일을 읽으므로 로컬에 모델이 필요 없음.
   `pharma_text`(15,182청크)는 Qdrant에도 있음. 캡션은 Anthropic 키 대기.
 - Phase 1의 4모드(text_only, vision_only, caption, hybrid)와 LangGraph HybridGraph 코드는 그대로 있음.
@@ -70,6 +70,7 @@ scripts/15_rebuild_text_index.py  블록 캐시에서 재청킹, 재임베딩 (D
 scripts/16_make_runpod_bundle.py  RunPod 업로드용 zip 생성
 scripts/embed_pages_gpu.py        RunPod 전용: Nemotron 페이지와 질의 임베딩 + Docling 블록 추출
 scripts/text_retrieval_gpu.py     RunPod 전용: 청킹, BGE-M3 임베딩, 질의별 정확 코사인 top-30, 리랭커 순위
+src/.../retriever/bm25.py         Okapi BM25 (stdlib + numpy, 모델 없음). runner의 bm25, text_bm25, hybrid_bm25 변형
 src/.../retriever/chunking.py     블록 → 청크 규칙 (표 머리글 유지, 짧은 조각 병합, 문서 라벨 접두어). 자체 테스트 포함
 notebooks/     01 Nemotron smoke, 02 Colab 터널 (deprecated)
 docs/          EXPERIMENT_PLAN.md (현행 계획, 0절이 현황), CORPUS.md (코퍼스 구성과 근거), VARAG_REVIEW.md

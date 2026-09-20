@@ -6,10 +6,13 @@ scores page-level Recall@1/3/5 and NDCG@5 against gold_pages, writes one row per
 Variants (skipped with a message when their index/inputs are missing):
     text           BGE-M3 dense over Docling chunks
     text_rerank    text top-30 chunks -> bge-reranker-v2-m3
+    bm25           Okapi BM25 (retriever/bm25.py) over the same chunks, no model
+    text_bm25      RRF(text, bm25) at page level, equal weights
     vision         Nemotron ColEmbed exact MaxSim, precomputed by scripts/13_score_vision_exact.py
     caption        BGE-M3 over Haiku page captions
     hybrid         RRF(text, vision) with the keyword router weights from modes/hybrid.py
     hybrid_rerank  same fusion with the reranked text side (strongest text path + vision)
+    hybrid_bm25    same fusion with the text_bm25 side (strongest text+lexical path + vision)
 QT / HyDE (Haiku query rewriting) and the generation + judge stage need ANTHROPIC_API_KEY; added with --generate later.
 
 Usage:
@@ -68,13 +71,38 @@ def _collection_count(name: str) -> int:
     return c.count(name, exact=True).count if c.collection_exists(name) else 0
 
 
+def _load_bm25_index():
+    """Load retriever/bm25.py by file path, bypassing retriever/__init__.py (torch/docling, minutes)."""
+    import importlib.util
+
+    chunks_file = _latest("*/text/text_chunks.jsonl")
+    if not chunks_file:
+        print("SKIP bm25 variants: no data/embeddings/*/text/text_chunks.jsonl")
+        return None
+    spec = importlib.util.spec_from_file_location("pharma_bm25", ROOT / "src/pharma_vision_rag/retriever/bm25.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    chunks = [json.loads(l) for l in chunks_file.read_text(encoding="utf-8").splitlines() if l.strip()]
+    return mod.BM25Index(chunks)  # built once per run, ~2s / 15k chunks
+
+
+class _AsSearch:
+    """Adapt a plain Search callable to the .search(q, k) shape fuse() expects."""
+
+    def __init__(self, fn: Search) -> None:
+        self.fn = fn
+
+    def search(self, q: str, k: int = CHUNK_POOL) -> list[dict[str, Any]]:
+        return self.fn(q)
+
+
 def build_variants(wanted: list[str]) -> dict[str, Search]:
     variants: dict[str, Search] = {}
     want = set(wanted)
-    text = rerank = vision = None
+    text = rerank = vision = bm25 = None
 
     dense_file, rerank_file = _latest("*/text/text_candidates.json"), _latest("*/text/text_reranked.json")
-    if want & {"text", "hybrid"} or ("text_rerank" in want and not rerank_file):
+    if want & {"text", "hybrid", "text_bm25", "hybrid_bm25"} or ("text_rerank" in want and not rerank_file):
         if dense_file:
             text = PrecomputedHits(dense_file)
         elif _collection_count("pharma_text"):
@@ -93,17 +121,21 @@ def build_variants(wanted: list[str]) -> dict[str, Search]:
                 def search(self, q: str, k: int = CHUNK_POOL) -> list[dict[str, Any]]:
                     return rr.rerank(q, base.search(q, k=CHUNK_POOL), top_k=k)
             rerank = _Live()
-    if want & {"vision", "hybrid", "hybrid_rerank"}:
+    if want & {"vision", "hybrid", "hybrid_rerank", "hybrid_bm25"}:
         ranked = _latest("*/vision_rankings.json")
         if ranked:
             vision = PrecomputedHits(ranked)
         else:
             print("SKIP vision variants: no data/embeddings/*/vision_rankings.json (run scripts/13_score_vision_exact.py)")
+    if want & {"bm25", "text_bm25", "hybrid_bm25"}:
+        bm25 = _load_bm25_index()
 
     if text and "text" in want:
         variants["text"] = lambda q: text.search(q, k=CHUNK_POOL)
     if rerank and "text_rerank" in want:
         variants["text_rerank"] = lambda q: rerank.search(q, k=CHUNK_POOL)
+    if bm25 and "bm25" in want:
+        variants["bm25"] = lambda q: bm25.search(q, k=CHUNK_POOL)
     if vision and "vision" in want:
         variants["vision"] = lambda q: vision.search(q, k=PAGE_POOL)
     if "caption" in want:
@@ -123,10 +155,26 @@ def build_variants(wanted: list[str]) -> dict[str, Search]:
             return rrf_merge(t_pages, vision.search(q, k=PAGE_POOL), w["w_text"], w["w_vision"])
         return hybrid
 
+    def fuse_equal(a: Search, b: Search) -> Search:
+        """RRF of two page-level rankings at equal weight (text_bm25: dense + lexical, no router)."""
+        from pharma_vision_rag.modes.hybrid import rrf_merge
+
+        def fn(q: str) -> list[dict[str, Any]]:
+            a_pages = [{"source": s, "page": p} for s, p in ranked_pages(a(q))[:PAGE_POOL]]
+            b_pages = [{"source": s, "page": p} for s, p in ranked_pages(b(q))[:PAGE_POOL]]
+            return rrf_merge(a_pages, b_pages, 0.5, 0.5)
+        return fn
+
+    text_bm25_fn = fuse_equal(lambda q: text.search(q, k=CHUNK_POOL), lambda q: bm25.search(q, k=CHUNK_POOL)) if text and bm25 else None
+
     if text and vision and "hybrid" in want:
         variants["hybrid"] = fuse(text)
     if rerank and vision and "hybrid_rerank" in want:
         variants["hybrid_rerank"] = fuse(rerank)
+    if text_bm25_fn and "text_bm25" in want:
+        variants["text_bm25"] = text_bm25_fn
+    if text_bm25_fn and vision and "hybrid_bm25" in want:
+        variants["hybrid_bm25"] = fuse(_AsSearch(text_bm25_fn))
     return variants
 
 
@@ -165,9 +213,11 @@ def summarize(rows: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", default="all", help="all or comma list: text,text_rerank,vision,caption,hybrid,hybrid_rerank")
+    ap.add_argument("--mode", default="all",
+                     help="all or comma list: text,text_rerank,bm25,text_bm25,vision,caption,hybrid,hybrid_rerank,hybrid_bm25")
     a = ap.parse_args()
-    wanted = ["text", "text_rerank", "vision", "caption", "hybrid", "hybrid_rerank"] if a.mode == "all" else a.mode.split(",")
+    wanted = (["text", "text_rerank", "bm25", "text_bm25", "vision", "caption", "hybrid", "hybrid_rerank", "hybrid_bm25"]
+              if a.mode == "all" else a.mode.split(","))
     rows = run(build_variants(wanted))
     if not rows:
         raise SystemExit("no variant available")
