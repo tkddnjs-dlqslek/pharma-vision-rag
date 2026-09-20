@@ -7,7 +7,7 @@ Local side: scripts/13_load_nemotron_npz.py upserts the zip into Qdrant (pharma_
 RunPod recipe (PyTorch template, any 16 GB+ GPU; ~10 min on RTX 4090, ~15 min on T4-class):
     # on the pod
     pip install -q "transformers>=4.45,<5" accelerate einops sentencepiece pypdfium2 Pillow huggingface_hub
-    export HF_TOKEN=hf_...                      # gated: accept the NVIDIA license on the model page first
+    # no HF token needed: the model repo is public (gated=False, checked 2026-09-20; NVIDIA non-commercial license)
     # flash-attn is optional (model card recommends it; Phase 1 ran without it on a T4)
     mkdir -p /workspace/input                   # then upload from local:
     #   runpodctl send data/pdf/*.pdf eval/questions.jsonl scripts/embed_pages_gpu.py   -> receive on pod into /workspace/input
