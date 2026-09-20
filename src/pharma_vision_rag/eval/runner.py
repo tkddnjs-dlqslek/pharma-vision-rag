@@ -154,10 +154,10 @@ def summarize(rows: list[dict[str, Any]]) -> None:
         groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
         for r in rows:
             groups[(r["variant"], key(r))].append(r)
-        print(f"\n{title}\n{'variant':<13}{'group':<8}{'n':>4}{'R@1':>7}{'R@3':>7}{'R@5':>7}{'NDCG@5':>8}")
+        print(f"\n{title}\n{'variant':<15}{'group':<8}{'n':>4}{'R@1':>7}{'R@3':>7}{'R@5':>7}{'NDCG@5':>8}")
         for (v, g), rs in sorted(groups.items()):
             m = {k: sum(float(r[k]) for r in rs) / len(rs) for k in ("r@1", "r@3", "r@5", "ndcg@5")}
-            print(f"{v:<13}{g:<8}{len(rs):>4}{m['r@1']:>7.2f}{m['r@3']:>7.2f}{m['r@5']:>7.2f}{m['ndcg@5']:>8.2f}")
+            print(f"{v:<15}{g:<8}{len(rs):>4}{m['r@1']:>7.2f}{m['r@3']:>7.2f}{m['r@5']:>7.2f}{m['ndcg@5']:>8.2f}")
     table("overall", lambda r: "all")
     table("by language", lambda r: r["lang"])
     table("by question type", lambda r: r["type"])

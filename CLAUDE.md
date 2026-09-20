@@ -16,8 +16,10 @@ Sanofi 2025 공시 PDF(차트·표 밀집)에 **한국어로 질문**하면 영�
 - **코퍼스 v2**: 27개 문서 1,709p (`eval/corpus.json`이 기준). Sanofi 2024와 2025 전체, Novartis, Roche, AstraZeneca 슬라이드.
   v1(172p)은 긴 컨텍스트에 통째로 들어가 RAG를 정당화할 수 없어서 확대함.
 - **평가셋**: 60문항 × 한/영(A20, B20, C10, D10, 기간 모호 10). gold는 정답이 실린 모든 페이지, 멀티홉은 `gold_groups`. 외부 리뷰어 검토 미완.
-- **평가 코드**: `eval/metrics.py`, `eval/runner.py` 완성. v1 텍스트 기준선은 dense R@5 0.67, 리랭커 0.72(차트 0.40).
-- **인덱스**: `pharma_text`는 v1(172p)만 있음. v2 텍스트와 비전은 RunPod 실행 대기. 캡션은 Anthropic 키 대기.
+- **v2 검색 벤치마크 완료**(120질의, R@5): text 0.63, text_rerank 0.69, **vision 0.84**, hybrid 0.81, hybrid_rerank 0.84.
+  차트는 text_rerank 0.70 대 vision 0.97(p=0.003). 멀티홉은 전부 0.28~0.42. 상세와 해석은 계획서 0절.
+- **인덱스**: 텍스트와 비전은 RunPod에서 계산해 `data/embeddings/v2/`에 결과만 보관. `runner`는 그 파일을 읽으므로 로컬에 모델이 필요 없음.
+  `pharma_text`(15,182청크)는 Qdrant에도 있음. 캡션은 Anthropic 키 대기.
 - Phase 1의 4모드(text_only, vision_only, caption, hybrid)와 LangGraph HybridGraph 코드는 그대로 있음.
 
 ## 실제 사용 모델 (PRD/README 표기와 다른 곳 주의)
@@ -67,6 +69,7 @@ scripts/14_index_text_all.py      로컬 Docling 인덱싱 (페이지당 약 50�
 scripts/15_rebuild_text_index.py  블록 캐시에서 재청킹, 재임베딩 (Docling 없이 수 분)
 scripts/16_make_runpod_bundle.py  RunPod 업로드용 zip 생성
 scripts/embed_pages_gpu.py        RunPod 전용: Nemotron 페이지와 질의 임베딩 + Docling 블록 추출
+scripts/text_retrieval_gpu.py     RunPod 전용: 청킹, BGE-M3 임베딩, 질의별 정확 코사인 top-30, 리랭커 순위
 src/.../retriever/chunking.py     블록 → 청크 규칙 (표 머리글 유지, 짧은 조각 병합, 문서 라벨 접두어). 자체 테스트 포함
 notebooks/     01 Nemotron smoke, 02 Colab 터널 (deprecated)
 docs/          EXPERIMENT_PLAN.md (현행 계획, 0절이 현황), CORPUS.md (코퍼스 구성과 근거), VARAG_REVIEW.md
@@ -89,8 +92,9 @@ eval/          corpus.json, questions.jsonl, page_inventory.csv (커밋), result
   Qdrant는 파생 인덱스로만 취급하고, 기준 데이터(`text_blocks.jsonl`, `data/embeddings/v2/`)에서 언제든 재구축한다.
 - 개발 PC는 RAM 16GB. BGE-M3와 리랭커(각 2.3GB)를 동시에 올리지 말 것: `runner --mode text` 후 `--mode text_rerank`를 따로 실행(후보 캐시 사용).
   10분 넘는 작업은 PowerShell `Start-Process`로 분리 실행하고 로그 파일로 확인.
-- v2 실행 순서: `11`(코퍼스) → `16`(번들) → RunPod `embed_pages_gpu.py` → zip들을 `data/embeddings/v2/`에 풀고 `text_blocks.jsonl`을
-  `data/embeddings/`로 복사 → `15`(텍스트 인덱스) → `13`(비전 순위) → `python -m pharma_vision_rag.eval.runner --mode all`.
+- v2 실행 순서: `11`(코퍼스) → `16`(번들) → RunPod에서 `embed_pages_gpu.py`, `13_score_vision_exact.py out`, `text_retrieval_gpu.py` →
+  작은 결과 파일만 `data/embeddings/v2/`로 → `15 --precomputed data/embeddings/v2/text` → `python -m pharma_vision_rag.eval.runner --mode all`.
+  RunPod 주의: Volume Disk가 `/workspace`에 실제로 마운트됐는지 `df -h`로 확인(30GB 컨테이너 디스크가 가득 찬 적 있음), `pip install hf_transfer` 필요.
 - 새 스크립트는 기존 패턴 유지: `ROOT/src`를 `sys.path`에 추가, `load_dotenv(ROOT/".env")`, 번호 접두사.
 
 ## 알려진 문제와 우회 (재발 방지용)
@@ -117,9 +121,8 @@ eval/          corpus.json, questions.jsonl, page_inventory.csv (커밋), result
 
 ## 다음 할 일
 
-1. (사용자) RunPod에서 `embed_pages_gpu.py` 실행. 업로드 파일은 `data/embeddings/runpod_input.zip`. 먼저 `--smoke`로 패치 수와 예상 용량 확인.
-2. 산출물을 받아 `15`(텍스트 인덱스 v2)와 `13`(비전 순위) 실행, `runner --mode all`로 v2 검색 벤치마크.
-3. (사용자) `.env`에 `ANTHROPIC_API_KEY` → 캡션 인덱스, QT, HyDE, 답변 생성과 judge, "통째로 넣기" 비교군.
-4. E1, E2 실행(고정 파이프라인 기준선).
-5. E4 agentic 모드 추가와 비교(`docs/EXPERIMENT_PLAN.md` 3.3절): tool use 기반 단일 agent, 다섯 번째 비교 대상.
-6. `docs/REPORT.md`.
+1. (사용자) `.env`에 `ANTHROPIC_API_KEY` → 캡션 인덱스, QT, HyDE, 답변 생성과 judge, "통째로 넣기" 비교군.
+2. E1, E2의 생성 단계 실행(검색 단계는 완료).
+3. E4 agentic 모드 추가와 비교(`docs/EXPERIMENT_PLAN.md` 3.3절): tool use 기반 단일 agent, 다섯 번째 비교 대상.
+4. 외부 리뷰어의 질문 검토. 문구가 바뀌면 RunPod에서 질의 임베딩과 순위 재계산.
+5. `docs/REPORT.md`.
