@@ -1,8 +1,8 @@
 """Validate eval/questions.jsonl against the schema, type distribution and page inventory.
 
 Checks (fail):
-  - 30 questions, unique ids, required fields, type in A/B/C/D, block_type in chart/table/text
-  - distribution: A10 / B10 / C5 / D5, explicit 25 / ambiguous 5
+  - 60 questions, unique ids, required fields, type in A/B/C/D, block_type in chart/table/text
+  - distribution: A20 / B20 / C10 / D10, explicit 50 / ambiguous 10
   - gold_pages lists every acceptable page; type D also has gold_groups (one group of alternates per hop)
   - every gold page exists in eval/corpus.json (document id + page range)
   - type A gold pages include at least one page tagged chart in the inventory
@@ -36,8 +36,8 @@ INVENTORY = ROOT / "eval" / "page_inventory.csv"
 
 REQUIRED = {"id", "type", "block_type", "q_ko", "q_en", "answer", "answer_keys",
             "gold_pages", "period_spec", "needs_review", "visual_only", "notes"}
-EXPECTED_TYPES = {"A": 10, "B": 10, "C": 5, "D": 5}
-EXPECTED_PERIOD = {"explicit": 25, "ambiguous": 5}
+EXPECTED_TYPES = {"A": 20, "B": 20, "C": 10, "D": 10}
+EXPECTED_PERIOD = {"explicit": 50, "ambiguous": 10}
 
 
 def load_inventory() -> dict[tuple[str, int], str]:
@@ -65,8 +65,8 @@ def main() -> int:
     errors: list[str] = []
     warns: list[str] = []
 
-    if len(qs) != 30:
-        errors.append(f"expected 30 questions, got {len(qs)}")
+    if len(qs) != 60:
+        errors.append(f"expected 60 questions, got {len(qs)}")
     ids = [q["id"] for q in qs]
     if len(set(ids)) != len(ids):
         errors.append("duplicate ids")
