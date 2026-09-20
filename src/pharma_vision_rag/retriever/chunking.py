@@ -33,7 +33,10 @@ def chunk_id(chunk: dict[str, Any]) -> str:
 
 
 def _load_labels() -> dict[str, str]:
-    manifest = Path(__file__).resolve().parents[3] / "eval" / "corpus.json"
+    parents = Path(__file__).resolve().parents
+    if len(parents) <= 3:  # copied out of the repo (e.g. /workspace on the GPU box): caller sets DOC_LABELS
+        return {}
+    manifest = parents[3] / "eval" / "corpus.json"
     if not manifest.exists():
         return {}
     return {d["id"]: d["label"] for d in json.loads(manifest.read_text(encoding="utf-8"))}
