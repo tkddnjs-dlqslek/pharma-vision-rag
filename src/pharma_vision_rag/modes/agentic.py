@@ -57,6 +57,7 @@ ROOT = Path(__file__).resolve().parents[3]
 CORPUS_PATH = ROOT / "eval" / "corpus.json"
 PDF_DIR = ROOT / "data" / "pdf" / "corpus"
 TEXT_CHUNKS_PATH = ROOT / "data" / "embeddings" / "v2" / "text" / "text_chunks.jsonl"
+VISION_RANKINGS_PATH = ROOT / "data" / "embeddings" / "v2" / "vision_rankings.json"
 BM25_MODULE_PATH = ROOT / "src" / "pharma_vision_rag" / "retriever" / "bm25.py"
 
 MAX_TOOL_CALLS = 10
@@ -207,7 +208,9 @@ class AgenticMode:
         text_chunks_path: Path = TEXT_CHUNKS_PATH,
         qdrant_url: str = "http://localhost:6335",
         text_retriever: str = "lexical",  # "lexical" (default, no model) | "dense" (loads DoclingTextRetriever + Qdrant)
+        page_retriever: str = "caption",  # "caption" (Qdrant pharma_caption) | "vision_precomputed" (see _search_pages_vision)
         max_tool_calls: int = MAX_TOOL_CALLS,
+        vision_rankings_path: Path = VISION_RANKINGS_PATH,
     ) -> None:
         self.client = client or anthropic.Anthropic()
         self.model = model
@@ -216,7 +219,10 @@ class AgenticMode:
         self.text_chunks_path = Path(text_chunks_path)
         self.qdrant_url = qdrant_url
         self.text_retriever = text_retriever
+        self.page_retriever = page_retriever
         self.max_tool_calls = max_tool_calls
+        self.vision_rankings_path = Path(vision_rankings_path)
+        self._vision: dict[str, list] | None = None
         self._corpus: dict[str, dict[str, Any]] | None = None
         self._bm25 = None  # lazy BM25Index over text_chunks_path
         self._dense = None  # lazy DoclingTextRetriever, only if text_retriever == "dense"
@@ -261,7 +267,27 @@ class AgenticMode:
             hits = [h for h in hits if h.get("source") in allowed]
         return hits
 
+    def _search_pages_vision(self, query: str, document_ids: list[str] | None) -> dict[str, Any]:
+        """Nemotron MaxSim page ranking, precomputed on the GPU box for the 120 benchmark queries only.
+        A query the agent reformulates has no embedding (the model needs a GPU), so only the exact
+        question text is answerable; anything else is a tool error pointing at search_text.
+        ponytail: exact-match lookup, a live Nemotron endpoint would lift the restriction."""
+        if self._vision is None:
+            self._vision = json.loads(self.vision_rankings_path.read_text(encoding="utf-8"))
+        ranked = self._vision.get(query.strip())
+        if ranked is None:
+            return {"content": "search_pages only accepts the exact original question text (page embeddings are "
+                               "precomputed per question). Use search_text for reformulated or partial queries.",
+                    "is_error": True}
+        if document_ids:
+            allowed = set(document_ids)
+            ranked = [r for r in ranked if r[0] in allowed]
+        hits = [{"source": d, "page": p, "score": round(float(s), 3)} for d, p, s in ranked[:5]]
+        return {"content": json.dumps(hits, ensure_ascii=False), "is_error": False}
+
     def _tool_search_pages(self, query: str, document_ids: list[str] | None) -> dict[str, Any]:
+        if self.page_retriever == "vision_precomputed":
+            return self._search_pages_vision(query, document_ids)
         from urllib.parse import urlparse
 
         host = urlparse(self.qdrant_url).hostname or "localhost"

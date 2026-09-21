@@ -129,6 +129,17 @@ def test_open_page_rejects_out_of_range_page():
     assert outcome["is_error"] is True
 
 
+def test_search_pages_vision_exact_question_only(tmp_path):
+    rankings = tmp_path / "vision_rankings.json"
+    rankings.write_text(json.dumps({"Q?": [["a.pdf", 3, 9.0], ["b.pdf", 1, 8.0], ["a.pdf", 7, 7.0]]}), encoding="utf-8")
+    mode = agentic.AgenticMode(client=FakeAnthropic([]), page_retriever="vision_precomputed", vision_rankings_path=rankings)
+    hits = json.loads(mode._tool_search_pages(" Q? ", None)["content"])
+    assert [(h["source"], h["page"]) for h in hits] == [("a.pdf", 3), ("b.pdf", 1), ("a.pdf", 7)]
+    filtered = json.loads(mode._tool_search_pages("Q?", ["a.pdf"])["content"])
+    assert [h["page"] for h in filtered] == [3, 7]
+    assert mode._tool_search_pages("reworded Q", None)["is_error"] is True
+
+
 # ─── modes/agentic.py: agent loop ───────────────────────────────────────
 
 

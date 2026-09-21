@@ -49,6 +49,9 @@ def main() -> None:
         p = sub.add_parser(name)
         p.add_argument("query")
         p.add_argument("--documents", nargs="*", default=None)
+        if name == "search_pages":
+            p.add_argument("--source", choices=["caption", "vision"], default="caption",
+                           help="vision = precomputed Nemotron ranking, exact benchmark question text only")
     p = sub.add_parser("open_page")
     p.add_argument("document_id")
     p.add_argument("page", type=int)
@@ -58,7 +61,8 @@ def main() -> None:
 
     agentic = _load_agentic()
     # client is never touched by the tool bodies; pass a placeholder so no API key is needed.
-    mode = agentic.AgenticMode(client=object())
+    vision = getattr(a, "source", "caption") == "vision"
+    mode = agentic.AgenticMode(client=object(), page_retriever="vision_precomputed" if vision else "caption")
 
     if a.tool == "open_page":
         doc = mode._load_corpus().get(a.document_id)

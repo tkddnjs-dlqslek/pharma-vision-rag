@@ -3,7 +3,10 @@
 Blind, like 17_make_generation_tasks.py: a batch holds only the question text and its language.
 Gold pages and reference answers stay in eval/questions.jsonl, which the agent may not open.
 
-    PYTHONIOENCODING=utf-8 python scripts/20_make_agentic_tasks.py [--batch 10]
+    PYTHONIOENCODING=utf-8 python scripts/20_make_agentic_tasks.py [--batch 10] [--name agentic_vision]
+
+--name picks the run: batches go to eval/results/<name>_tasks/ (answers to <name>_answers/). The
+INSTRUCTIONS.md in that directory decides which tools the agent gets; it is hand-written per run.
 """
 from __future__ import annotations
 
@@ -12,13 +15,14 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "eval" / "results" / "agentic_tasks"
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--batch", type=int, default=10)
+    ap.add_argument("--name", default="agentic")
     a = ap.parse_args()
+    OUT = ROOT / "eval" / "results" / f"{a.name}_tasks"
 
     qs = [json.loads(l) for l in open(ROOT / "eval" / "questions.jsonl", encoding="utf-8") if l.strip()]
     # All ko first, then all en, so a question's two language twins never share a batch: an agent
