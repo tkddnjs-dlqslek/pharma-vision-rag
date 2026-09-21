@@ -38,10 +38,15 @@ API 키와 크레딧이 없어서 **답변 생성과 채점은 Anthropic API 대
 4. **[완료 2026-09-21] agentic 모드(E4) 120질의.** 서브에이전트가 `scripts/19_agentic_tools.py`(= `modes/agentic.py` 도구 본문)를 셸로 호출.
    작업은 `20_make_agentic_tasks.py`(한국어 60건을 묶음 0~5, 영어를 6~11로 나눠 **같은 질문의 한영 쌍이 한 에이전트에 가지 않게** 함.
    처음엔 섞여 있어서 에이전트가 쌍둥이 질문을 앞 질문의 검색 결과로 답했음), 채점은 `21_score_agentic.py prepare/report`.
-   결과: **agentic 0.88**(멀티홉 0.97, 차트 0.86, 본문 0.75), 평균 도구 2.7회, 인용 페이지가 gold에 맞은 비율 0.84.
-   **주의: agentic 채점은 blind가 아님**(채점자가 agentic 답인 걸 알았음). 키 문자열 일치(채점자 무관)로는 agentic과 vision이 0.53으로 같고,
-   멀티홉만 0.50 대 0.05~0.15로 확실히 앞섬. 상세와 해석은 계획서 0절 "생성 단계 결과".
-5. **남은 선택 과제**: 네 방식을 섞어 한 번에 blind 재채점(서브에이전트, 약 450건), 평가셋 결함(D03 회사명, B08 발행일) 수정, gold 누락 재검토.
+   평균 도구 2.7회, 인용 페이지가 gold에 맞은 비율 0.84.
+5. **[완료 2026-09-21] 혼합 blind 재채점.** `scripts/22_blind_rejudge.py prepare/report`. 네 방식 답변 451건을 익명 id로 섞어
+   서브에이전트 12명이 채점(`eval/results/rejudge_tasks/`, 역매핑 `map.json`은 채점자 열람 금지). **이게 최종 수치**:
+   text_rerank 0.59, vision 0.79, hybrid_rerank 0.75, **agentic 0.87**(멀티홉 0.90, 차트 0.86, 본문 0.72).
+   agentic 대 vision p=0.03, 멀티홉 12승 0패. 1차 채점과 일치율 0.88~0.94, agentic 편향은 셀당 +0.008로 거의 없었음. 상세는 계획서 0절.
+6. **기준 정답 수정(렌더로 확인)**: A01은 636(2024Q1 보도자료 p5)과 637(2025Q1 덱) 둘 다 인정하고 보도자료 페이지를 gold에 추가.
+   B08은 발행일 06/23(20-F 표 p254)과 June 17(서술 p66)을 병기하고 p66을 gold에 추가. 검색 지표 재계산 완료(계획서 표 갱신).
+   재채점 묶음은 A01 수정 뒤, B08 수정 전에 만들어졌음.
+7. **남은 선택 과제**: D03 질문에 회사명 넣기(RunPod 질의 재임베딩 약 $2), gold 누락 재검토, 생성과 채점 반복(현재 1회), 실제 API 경로 파일럿.
 
 **평가셋 결함 상태 (질문 문구를 바꾸면 RunPod에서 질의 임베딩 재계산 필요, 약 $2)**
 - A02: **해결.** `sanofi_2024Q4_deck.pdf` p27을 렌더해 확인한 결과 Q2 2024 = -201, EPS -0.08로 gold와 일치(각주에 Opella 제외 재작성 명시).
@@ -54,7 +59,7 @@ API 키와 크레딧이 없어서 **답변 생성과 채점은 Anthropic API 대
 - 교훈: gold는 텍스트 일치만으로 넣지 말고 반드시 렌더해서 확인(A05에서 틀린 적 있음). 서브에이전트 보고도 검증 후 반영
   (묶음 23 보고는 건수가 8+3=11로 어긋났으나 실제 파일은 12줄 정상이었음).
 
-## 현재 상태 (Phase 2 진행 중, 2026-09-20)
+## 현재 상태 (Phase 3 완료, 2026-09-21. 생성 단계와 E4 결과는 위 핸드오프 절과 계획서 0절)
 
 상세 현황표는 `docs/EXPERIMENT_PLAN.md` 0절. 요약:
 - **코퍼스 v2**: 27개 문서 1,709p (`eval/corpus.json`이 기준). Sanofi 2024와 2025 전체, Novartis, Roche, AstraZeneca 슬라이드.
@@ -171,10 +176,9 @@ eval/          corpus.json, questions.jsonl, page_inventory.csv (커밋), result
 
 ## 다음 할 일
 
-1. (사용자) `.env`에 `ANTHROPIC_API_KEY` → 캡션 인덱스, QT, HyDE, 답변 생성과 judge, "통째로 넣기" 비교군.
-2. 10문항 파일럿으로 비용 확인 후 E1, E2의 생성 단계 실행(검색 단계는 완료, 코드는 작성됨):
-   `python -m pharma_vision_rag.eval.generate --variant vision --limit 10` → `python -m pharma_vision_rag.eval.judge --variant vision`.
-3. E4 agentic 모드 실행과 비교(코드 작성됨, **실제 API로는 미검증**): `python src/pharma_vision_rag/modes/agentic.py --limit 10` → judge.
-   미검증 가정: tool_result 안의 이미지 블록, `tool_choice`로 final_answer 강제, 모델 id 유효성. 첫 실행에서 확인할 것.
-4. 외부 리뷰어의 질문 검토. 문구가 바뀌면 RunPod에서 질의 임베딩과 순위 재계산.
-5. `docs/REPORT.md`.
+생성 단계와 E4는 서브에이전트로 끝났음(핸드오프 절 5번이 최종 수치). 남은 건 전부 선택 과제:
+1. (사용자, API 키 필요) 캡션 인덱스, QT, HyDE, "통째로 넣기" 비교군. 그리고 API 경로 파일럿:
+   `generate.py`, `judge.py`, `modes/agentic.py` 루프는 **실제 API로 한 번도 돌려보지 않았음**.
+   미검증 가정: tool_result 안의 이미지 블록, `tool_choice`로 final_answer 강제, 모델 id 유효성.
+2. D03 질문에 회사명 추가(RunPod 질의 재임베딩), gold 누락 재검토, 외부 리뷰어 질문 검토.
+3. `docs/REPORT.md`는 사용자 지시로 쓰지 않음(요약은 채팅으로).
