@@ -129,6 +129,18 @@ def test_open_page_rejects_out_of_range_page():
     assert outcome["is_error"] is True
 
 
+def test_search_text_document_filter_applies_before_pool_cut(tmp_path):
+    # 60 strong matches in a.pdf outrank the single weak match in b.pdf, so b.pdf sits outside the
+    # global top-50 pool; filtering to b.pdf must still find it.
+    chunks = [{"chunk_id": f"a{i}", "source": "a.pdf", "page": i, "text": "net debt net debt net debt"} for i in range(60)]
+    chunks.append({"chunk_id": "b0", "source": "b.pdf", "page": 1, "text": "net debt and many other unrelated words here"})
+    path = tmp_path / "chunks.jsonl"
+    path.write_text("\n".join(json.dumps(c) for c in chunks), encoding="utf-8")
+    mode = agentic.AgenticMode(client=FakeAnthropic([]), text_chunks_path=path)
+    hits = json.loads(mode._tool_search_text("net debt", ["b.pdf"])["content"])
+    assert [(h["source"], h["page"]) for h in hits] == [("b.pdf", 1)]
+
+
 def test_search_pages_vision_exact_question_only(tmp_path):
     rankings = tmp_path / "vision_rankings.json"
     rankings.write_text(json.dumps({"Q?": [["a.pdf", 3, 9.0], ["b.pdf", 1, 8.0], ["a.pdf", 7, 7.0]]}), encoding="utf-8")

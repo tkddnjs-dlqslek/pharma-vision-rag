@@ -221,6 +221,31 @@ def report() -> None:
                   f"({len(both)} cells), run1 better {w}, worse {l}, p={S18.sign_test(w, l):.3f}")
 
     base_arms = [a for a in BASE_ARMS if a in arms]
+    # Both runs averaged per (question, language) cell: the headline numbers once a second run exists.
+    avg: dict[tuple[str, str, str], float] = {}
+    for (a, q, l), s in cells.items():
+        if a in BASE_ARMS and (f"{a}@rep2", q, l) in cells:
+            avg[(a, q, l)] = (s + cells[(f"{a}@rep2", q, l)]) / 2
+    if avg:
+        print("\nmean of both runs per cell")
+        print(f"{'arm':<21}" + "".join(f"{c:>10}" for c, _ in cols))
+        for arm in base_arms:
+            row = []
+            for _, pred in cols:
+                vals = [s for (a, q, l), s in avg.items() if a == arm and pred(q, l)]
+                row.append(f"{sum(vals) / len(vals):.2f}" if vals else "-")
+            print(f"{arm:<21}" + "".join(f"{x:>10}" for x in row))
+        print("\npaired sign tests on the two-run mean")
+        for i, a in enumerate(base_arms):
+            for b in base_arms[i + 1:]:
+                for types in ("ABCD", "A", "C", "D"):
+                    w = l = 0
+                    for (arm, q, lg), s in avg.items():
+                        if arm == a and (b, q, lg) in avg and qs[q]["type"] in types:
+                            w += s > avg[(b, q, lg)]
+                            l += s < avg[(b, q, lg)]
+                    print(f"  {a} vs {b} [{types}]: {w} better, {l} worse, p={S18.sign_test(w, l):.4f}")
+
     print("\npaired sign tests on score (run 1)")
     for i, a in enumerate(base_arms):
         for b in base_arms[i + 1:]:

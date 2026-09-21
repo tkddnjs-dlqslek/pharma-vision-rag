@@ -247,7 +247,9 @@ class AgenticMode:
             if self._bm25 is None:
                 bm25_mod = _load_bm25_module()
                 self._bm25 = bm25_mod.BM25Index(_load_chunks(self.text_chunks_path))
-            raw = self._bm25.search(query, k=BM25_POOL)
+            # Filter before cutting the pool: cutting to the global top-BM25_POOL first returned nothing
+            # whenever the requested documents ranked outside it (seen in the E4 runs, 2026-09-21).
+            raw = self._bm25.search(query, k=len(self._bm25.chunks) if document_ids else BM25_POOL)
             if document_ids:
                 allowed = set(document_ids)
                 raw = [h for h in raw if h.get("source") in allowed]
