@@ -264,12 +264,12 @@ class AgenticMode:
     def _tool_search_pages(self, query: str, document_ids: list[str] | None) -> dict[str, Any]:
         from urllib.parse import urlparse
 
-        from qdrant_client import QdrantClient
         host = urlparse(self.qdrant_url).hostname or "localhost"
         try:
+            from qdrant_client import QdrantClient  # not installed on every box -> tool error, not a crash
             qc = QdrantClient(host=host, grpc_port=6336, prefer_grpc=True, check_compatibility=False, timeout=10)
             exists = qc.collection_exists("pharma_caption")
-        except Exception as e:  # noqa: BLE001 - Qdrant unreachable, etc.
+        except Exception as e:  # noqa: BLE001 - Qdrant unreachable, client missing, etc.
             return {"content": f"caption index not built (Qdrant unreachable: {e})", "is_error": True}
         if not exists:
             return {"content": "caption index not built (pharma_caption collection is empty; "
