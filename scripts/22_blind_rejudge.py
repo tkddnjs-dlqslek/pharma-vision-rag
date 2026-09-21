@@ -29,8 +29,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RES = ROOT / "eval" / "results"
 SCORE = {"correct": 1.0, "partial": 0.5, "wrong": 0.0}
-ARMS = ["text_rerank", "vision", "hybrid_rerank", "agentic", "agentic_vision"]
-AGENT_RUNS = ["agentic", "agentic_vision"]  # <name>_answers/*.jsonl, task_id "<qid>_<lang>"
+BASE_ARMS = ["text_rerank", "vision", "hybrid_rerank", "agentic", "agentic_vision"]
+ARMS = BASE_ARMS + [f"{a}@rep2" for a in BASE_ARMS]  # @rep2 = second, independent generation run
+AGENT_RUNS = ["agentic", "agentic_vision", "agentic_rep2", "agentic_vision_rep2"]  # <name>_answers/*.jsonl
+GEN_RUNS = {"gen": "gen_answers", "gen_rep2": "gen_answers_rep2"}  # src -> answers dir (same tasks, key.json)
+ROUNDS = ["r1", "r2", "r3"]
+
+
+def arm_of(run: str) -> str:
+    return run.replace("_rep2", "@rep2")
 
 
 def _load_18():
@@ -56,15 +63,17 @@ def pooled() -> list[dict]:
     """Every generated answer once, with the (arm, question, lang) cells it stands for."""
     qs, key = S18.questions(), json.loads((RES / "gen_tasks" / "key.json").read_text(encoding="utf-8"))
     out = []
-    for tid, a in S18.load_jsonl("gen_answers/*.jsonl").items():
-        k = key[tid]
-        out.append({"src": "gen", "task_id": tid, "qid": k["id"], "lang": k["lang"], "question": k["question"],
-                    "answer": a["answer"], "cells": [(v, k["id"], k["lang"]) for v in k["used_by"]]})
+    for src, folder in GEN_RUNS.items():
+        suffix = "@rep2" if src.endswith("_rep2") else ""
+        for tid, a in S18.load_jsonl(f"{folder}/*.jsonl").items():
+            k = key[tid]
+            out.append({"src": src, "task_id": tid, "qid": k["id"], "lang": k["lang"], "question": k["question"],
+                        "answer": a["answer"], "cells": [(v + suffix, k["id"], k["lang"]) for v in k["used_by"]]})
     for run in AGENT_RUNS:
         for tid, a in S18.load_jsonl(f"{run}_answers/*.jsonl").items():
             qid, lang = tid.rsplit("_", 1)
             out.append({"src": run, "task_id": tid, "qid": qid, "lang": lang, "question": qs[qid][f"q_{lang}"],
-                        "answer": a["answer"], "cells": [(run, qid, lang)], "tool_calls": a.get("tool_calls")})
+                        "answer": a["answer"], "cells": [(arm_of(run), qid, lang)], "tool_calls": a.get("tool_calls")})
     return out
 
 
@@ -80,9 +89,11 @@ def prepare(batch: int, rnd: str, anchors: int) -> None:
     if rnd == "r1":
         chosen = [(r, False) for r in rows]
     else:
-        seen = {(m["src"], m["task_id"]) for m in load_map("r1").values()}
+        earlier = ROUNDS[:ROUNDS.index(rnd)]
+        seen = {(m["src"], m["task_id"]) for r_ in earlier for m in load_map(r_).values() if not m.get("anchor")}
+        r1_seen = {(m["src"], m["task_id"]) for m in load_map("r1").values()}  # anchors always come from r1
         new = [r for r in rows if (r["src"], r["task_id"]) not in seen]
-        old = sorted((r for r in rows if (r["src"], r["task_id"]) in seen), key=lambda r: anon("anchor", r["src"], r["task_id"]))
+        old = sorted((r for r in rows if (r["src"], r["task_id"]) in r1_seen), key=lambda r: anon(f"anchor-{rnd}", r["src"], r["task_id"]))
         chosen = [(r, False) for r in new] + [(r, True) for r in old[:anchors]]
     chosen.sort(key=lambda x: anon(salt, x[0]["src"], x[0]["task_id"]))  # hash order = arm-agnostic shuffle
     tasks, mapping = [], {}
@@ -128,25 +139,26 @@ def verdicts(rnd: str) -> dict[str, str]:
 def report() -> None:
     qs = S18.questions()
     rows = {(r["src"], r["task_id"]): r for r in pooled()}
-    final: dict[tuple[str, str], str] = {}  # (src, task_id) -> verdict; r1 wins, r2 adds only new answers
-    anchor_pairs = []
-    for rnd in ("r1", "r2"):
+    final: dict[tuple[str, str], str] = {}  # (src, task_id) -> verdict; the earliest round that judged it wins
+    for rnd in ROUNDS:
         mapping, got = load_map(rnd), verdicts(rnd)
         if not mapping:
             continue
         print(f"{rnd}: {len(got)}/{len(mapping)} answers judged")
+        pairs = []
         for aid, verdict in got.items():
             m = mapping[aid]
             k = (m["src"], m["task_id"])
             if m.get("anchor"):
-                anchor_pairs.append((final.get(k), verdict))
+                pairs.append((final.get(k), verdict))
             elif k not in final:
                 final[k] = verdict
-    if anchor_pairs:
-        pairs = [(a, b) for a, b in anchor_pairs if a is not None]
-        same = sum(a == b for a, b in pairs)
-        drift = sum(SCORE[b] - SCORE[a] for a, b in pairs) / len(pairs)
-        print(f"r2 anchors: same verdict as r1 on {same}/{len(pairs)} ({same / len(pairs):.2f}), r2 minus r1 {drift:+.3f} per answer")
+        pairs = [(a, b) for a, b in pairs if a is not None]
+        if pairs:
+            same = sum(a == b for a, b in pairs)
+            drift = sum(SCORE[b] - SCORE[a] for a, b in pairs) / len(pairs)
+            print(f"  {rnd} anchors: same verdict as r1 on {same}/{len(pairs)} ({same / len(pairs):.2f}), "
+                  f"{rnd} minus r1 {drift:+.3f} per answer")
 
     first = {("gen", t): v["verdict"] for t, v in S18.load_jsonl("judge_verdicts/*.jsonl").items()}
     first.update({("agentic", t): v["verdict"] for t, v in S18.load_jsonl("judge_verdicts_agentic/*.jsonl").items()})
@@ -171,17 +183,24 @@ def report() -> None:
     cols = [("all", lambda q, l: True)] + [(t, lambda q, l, t=t: qs[q]["type"] == t) for t in "ABCD"] + \
            [(lg, lambda q, l, lg=lg: l == lg) for lg in ("en", "ko")] + \
            [(p, lambda q, l, p=p: qs[q]["period_spec"] == p) for p in ("explicit", "ambiguous")]
-    print(f"\nblind re-judge accuracy (correct 1, partial 0.5)\n{'arm':<15}" + "".join(f"{c:>10}" for c, _ in cols))
+    print(f"\nblind re-judge accuracy (correct 1, partial 0.5)\n{'arm':<21}" + "".join(f"{c:>10}" for c, _ in cols))
     for arm in arms:
-        print(f"{arm:<15}" + "".join(f"{mean(arm, p):>10}" for _, p in cols))
+        print(f"{arm:<21}" + "".join(f"{mean(arm, p):>10}" for _, p in cols))
+
+    # Sensitivity: until 2026-09-21 CLAUDE.md (which subagents load automatically) carried reference values
+    # and gold pages for A01, A02 and B08; D03 has no company name. Scores without those four questions:
+    held_out = {"A01", "A02", "B08", "D03"}
+    print(f"\nexcluding {', '.join(sorted(held_out))} (possible leak via CLAUDE.md, or defective)")
+    for arm in arms:
+        print(f"{arm:<21}{mean(arm, lambda q, l: q not in held_out):>10}")
 
     # The API loop forces final_answer at MAX_TOOL_CALLS; subagents were only told to stop. Cells that
     # overran are rescored as wrong to show how much the overrun could have bought.
     for run in AGENT_RUNS:
         over = [k for k, r in rows.items() if r["src"] == run and k in final and (r.get("tool_calls") or 0) > 10]
         if over:
-            over_cells = {(run, rows[k]["qid"], rows[k]["lang"]) for k in over}
-            vals = [0.0 if c in over_cells else s for c, s in cells.items() if c[0] == run]
+            over_cells = {(arm_of(run), rows[k]["qid"], rows[k]["lang"]) for k in over}
+            vals = [0.0 if c in over_cells else s for c, s in cells.items() if c[0] == arm_of(run)]
             print(f"{run}: {len(over)} cells over the 10-call budget ({', '.join(t for _, t in over)}); "
                   f"score if those count as wrong {sum(vals) / len(vals):.2f}")
 
@@ -191,9 +210,20 @@ def report() -> None:
         if n:
             print(f"  {arm:<15} same verdict {same / n:.2f} ({n} cells), first pass minus re-judge {diff / n:+.3f} per cell")
 
-    print("\npaired sign tests on score")
-    for i, a in enumerate(arms):
-        for b in arms[i + 1:]:
+    print("\nrun-to-run: first vs second independent generation run, same tasks, same rubric")
+    for base in BASE_ARMS:
+        rep = f"{base}@rep2"
+        both = [(s, cells[(rep, q, l)]) for (a, q, l), s in cells.items() if a == base and (rep, q, l) in cells]
+        if both:
+            m1, m2 = sum(x for x, _ in both) / len(both), sum(y for _, y in both) / len(both)
+            w, l = sum(x > y for x, y in both), sum(x < y for x, y in both)
+            print(f"  {base:<15} run1 {m1:.2f}  run2 {m2:.2f}  same cell score {sum(x == y for x, y in both) / len(both):.2f} "
+                  f"({len(both)} cells), run1 better {w}, worse {l}, p={S18.sign_test(w, l):.3f}")
+
+    base_arms = [a for a in BASE_ARMS if a in arms]
+    print("\npaired sign tests on score (run 1)")
+    for i, a in enumerate(base_arms):
+        for b in base_arms[i + 1:]:
             for types in ("ABCD", "A", "C", "D"):
                 w = l = 0
                 for (arm, q, lg), s in cells.items():
