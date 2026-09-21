@@ -21,17 +21,30 @@ API 키와 크레딧이 없어서 **답변 생성과 채점은 Anthropic API 대
 2. **[완료 2026-09-21] 답변 생성 331/331건.** 묶음마다 서브에이전트 하나(프롬프트: "`gen_tasks/INSTRUCTIONS.md`를 읽고 그대로 따를 것, 묶음 번호 NN"),
    결과는 `eval/results/gen_answers/batch_NN.jsonl`. 한 번에 3개씩 실행, 묶음당 약 16만 토큰과 3분. 이미지 로드 실패 0건.
    "정보를 찾을 수 없습니다" 44건(13%). 재개할 일이 생기면 `ls eval/results/gen_answers/*.jsonl`로 없는 번호만 다시 실행.
-3. **[진행 중] 채점.** `18_score_generation.py prepare`가 331건을 `eval/results/judge_tasks/batch_00~08.json`(40건씩)으로 묶음.
-   채점 에이전트는 `judge_tasks/INSTRUCTIONS.md`를 따라 `eval/results/judge_verdicts/batch_NN.jsonl`에
-   `{"task_id","verdict":"correct|partial|wrong","reason"}` 작성. 질문, 기준 정답, 모델 답만 보고 판정하며 방식은 모름.
-   미발견은 `wrong`으로 침(검색 실패가 파이프라인 실패이므로). 9묶음이 다 모이면 `18_score_generation.py report`.
-4. 그다음: agentic 모드도 서브에이전트로(검색 스크립트와 페이지 열기를 도구로 주고 120질의). 계획서 3.3절.
+3. **[완료 2026-09-21] 채점 331건.** `18_score_generation.py prepare`가 `judge_tasks/batch_00~08.json`(40건씩)을 만들고,
+   기준은 `judge_tasks/INSTRUCTIONS.md`. 판정은 `eval/results/judge_verdicts/batch_NN.jsonl`에
+   `{"task_id","verdict":"correct|partial|wrong","reason"}`. 미발견은 `wrong`으로 침(검색 실패가 파이프라인 실패이므로).
+   **채점 에이전트가 사용량 한도로 전부 실패해서 메인 세션이 직접 판정함.** 다시 돌릴 일이 생기면 한도 여유를 보고 에이전트로.
+   결과 표는 `18_score_generation.py report`로 재생성, 셀 단위 기록은 `eval/results/generation_scored.csv`.
+
+   | 방식 | 전체 | 차트A | 표B | 서술C | 멀티홉D | 영어 | 한국어 | 명시기간 | 모호기간 |
+   |---|---|---|---|---|---|---|---|---|---|
+   | text_rerank | 0.60 | 0.65 | 0.49 | 0.90 | 0.42 | 0.66 | 0.54 | 0.59 | 0.62 |
+   | vision | 0.79 | 0.86 | 0.85 | 0.80 | 0.53 | 0.81 | 0.78 | 0.83 | 0.57 |
+   | hybrid_rerank | 0.80 | 0.81 | 0.85 | 0.95 | 0.50 | 0.81 | 0.78 | 0.81 | 0.70 |
+
+   부호 검정: vision과 hybrid_rerank는 text_rerank보다 유의하게 높음(전체 p<0.01, 차트 p≈0.02). vision 대 hybrid_rerank는 차이 없음(p=0.57).
+   검색 단계 우위가 생성 단계까지 남음. 한국어 손실은 text 경로에서만 큼(-0.12), 비전과 하이브리드는 -0.03.
+4. **[다음] agentic 모드**도 서브에이전트로(검색 스크립트와 페이지 열기를 도구로 주고 120질의). 계획서 3.3절. 사용량 한도 리셋 후 진행.
 
 **평가셋 결함 상태 (질문 문구를 바꾸면 RunPod에서 질의 임베딩 재계산 필요, 약 $2)**
 - A02: **해결.** `sanofi_2024Q4_deck.pdf` p27을 렌더해 확인한 결과 Q2 2024 = -201, EPS -0.08로 gold와 일치(각주에 Opella 제외 재작성 명시).
   -238은 gold가 아닌 `sanofi_2024Q3_deck.pdf` p25(재작성 전 원본)의 값. **gold 수정 불필요.**
 - D03: 질문에 회사 이름이 없음(v1 잔재). 검색기가 Novartis 페이지를 가져옴. 결함 문항으로 따로 표시할 것.
-- B08: 질문은 2025년 6월 23일 발행이라 하는데 20-F 서술부에는 6월 17일이 있다는 보고. 채점 결과를 볼 때 확인.
+- B08: 20-F 서술부는 발행일을 6월 17일로 적고 표는 6월 23일 만기 채권을 싣고 있음. 답변 여러 건이 이 불일치를 지적함. 문구 조정 검토.
+- **gold 불완전 의심**: 채점표의 "gold가 top3에 없는데도 답한" 셀 중 correct/partial 비율이 text_rerank 17/21, hybrid 13/14로 높음.
+  정답이 gold 외 페이지에도 실려 있다는 뜻이라 gold 누락 가능성이 큼. 검색 지표(R@k)가 과소평가됐을 수 있으니 재검토 대상.
+  vision은 6/12로 낮아, 진짜 검색 실패와 gold 누락이 섞여 있음.
 - 교훈: gold는 텍스트 일치만으로 넣지 말고 반드시 렌더해서 확인(A05에서 틀린 적 있음). 서브에이전트 보고도 검증 후 반영
   (묶음 23 보고는 건수가 8+3=11로 어긋났으나 실제 파일은 12줄 정상이었음).
 
