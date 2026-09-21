@@ -11,13 +11,13 @@
 ## Results in one table
 
 120 queries (60 questions x KO/EN), answer accuracy with correct = 1, partial = 0.5. Every arm's answers
-were pooled, anonymized and judged blind by 12 independent judges with one rubric.
+were pooled, anonymized and judged blind with one rubric (16 judge subagents over two rounds).
 
 | Arm | Retrieval R@5 | Answer score | Charts | Tables | Prose | Multi-hop | EN / KO |
 |---|---|---|---|---|---|---|---|
-| text_rerank (BGE-M3 + reranker) | 0.70 | 0.59 | 0.62 | 0.49 | 0.90 | 0.40 | 0.65 / 0.53 |
-| vision (Nemotron ColEmbed, MaxSim) | 0.84 | 0.79 | 0.86 | 0.85 | 0.82 | 0.47 | 0.81 / 0.77 |
-| hybrid_rerank (RRF of both) | 0.86 | 0.75 | 0.79 | 0.81 | 0.90 | 0.40 | 0.77 / 0.73 |
+| text_rerank (BGE-M3 + reranker) | 0.72 | 0.59 | 0.62 | 0.49 | 0.90 | 0.40 | 0.65 / 0.53 |
+| vision (Nemotron ColEmbed, MaxSim) | 0.88 | 0.79 | 0.86 | 0.85 | 0.82 | 0.47 | 0.81 / 0.77 |
+| hybrid_rerank (RRF of both) | 0.89 | 0.75 | 0.79 | 0.81 | 0.90 | 0.40 | 0.77 / 0.73 |
 | agentic, BM25 only (E4) | n/a | 0.87 | 0.86 | 0.93 | 0.72 | 0.90 | 0.86 / 0.88 |
 | **agentic, BM25 + vision (E4b)** | n/a | **0.93** | **0.90** | **0.94** | **0.95** | **0.93** | 0.93 / 0.92 |
 
@@ -33,7 +33,7 @@ answer more lenient than round one, so read E4b as about 0.90 on the same scale.
   with BM25 alone it missed a question in both languages that vision search then found after three text misses.
 - **On charts, neither agent beats vision alone** (5-5): single-shot vision already reaches R@5 0.97 there.
 - **Korean costs the text path 12 points** and the vision path 4.
-- Fixed-weight hybrid fusion did not beat vision alone (p=0.49); its R@1 is lower (0.54 vs 0.62).
+- Fixed-weight hybrid fusion did not beat vision alone (p=0.49); its R@1 is lower (0.58 vs 0.64).
 
 **Cost per answer** (measured on the subagent runs): fixed arms 13.6k tokens and 15 s (generation only, always
 three full-page images); agents 11.2-11.4k tokens and 36-37 s with 2.6-2.7 tool calls. The agents use *fewer*
@@ -72,8 +72,9 @@ unit-tested with a fake client, but **have not been run against the live API**.
   question on a GPU box), so reformulated follow-up searches fall back to BM25. A live vision endpoint would lift this.
 - Each agent run had one cell over the 10-call budget (the API loop enforces it; subagents were only told to).
   Scoring those as wrong moves E4 to 0.86 and E4b to 0.92.
-- One question (D03) omits the company name, and some gold labels may still be incomplete (answers were
-  sometimes found on pages outside the gold set). The question set has not had an external review.
+- One question (D03) omits the company name. The question set has not had an external review.
+- Gold completeness: pages that correct answers cited outside the gold set were checked (92 candidates, 38 added
+  after a render check). This raised vision's multi-hop R@5 from 0.42 to 0.62, more than it raised the text arms.
 - The caption arm, query transformation and HyDE are implemented but not run (they need an API key).
 
 ## Repository layout
@@ -86,7 +87,7 @@ src/pharma_vision_rag/
   modes/       text_only, vision_only, caption, hybrid (keyword-weighted RRF), agentic
   router/      LangGraph graph for hybrid (a deterministic DAG, not an agent)
   eval/        metrics, runner, generate, judge, pricing
-scripts/       11-22: corpus build, validation, GPU jobs, task builders, scorers (00-10 are Phase 1 history)
+scripts/       11-23: corpus build, validation, GPU jobs, task builders, scorers (00-10 are Phase 1 history)
 eval/          corpus.json, questions.jsonl, page_inventory.csv
 docs/          EXPERIMENT_PLAN.md (current plan and results), CORPUS.md, FAILURE_ANALYSIS.md
 ```
