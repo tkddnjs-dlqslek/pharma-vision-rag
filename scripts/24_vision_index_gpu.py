@@ -71,13 +71,14 @@ def build(emb: Path, work: Path, manifest: dict) -> None:
     if need > free:
         raise SystemExit("not enough disk: use a larger volume (100 GB recommended)")
 
+    # Filled in RAM (~36 GB; the pod has far more) and written once with np.save. Writing through open_memmap on the
+    # RunPod overlay disk stalled: writeback of the dirty mmap pages dropped to ~100 KB/s once the page cache filled.
     out = {}
     for v, n, dt in (("full_fp16", offsets[-1], np.float16), ("int8", offsets[-1], np.int8),
                      ("pooled", pooled_off[-1], np.float16), ("pooled_int8", pooled_off[-1], np.int8)):
         (work / v).mkdir(parents=True, exist_ok=True)
-        out[v] = np.lib.format.open_memmap(work / v / "vectors.npy", mode="w+", dtype=dt, shape=(int(n), dim))
-    scales = {v: np.lib.format.open_memmap(work / v / "scales.npy", mode="w+", dtype=np.float32, shape=(len(out[v]),))
-              for v in ("int8", "pooled_int8")}
+        out[v] = np.empty((int(n), dim), dtype=dt)
+    scales = {v: np.empty(len(out[v]), dtype=np.float32) for v in ("int8", "pooled_int8")}
 
     t0 = time.time()
     for a, b in page_runs(offsets, CHUNK_ROWS):
@@ -92,7 +93,11 @@ def build(emb: Path, work: Path, manifest: dict) -> None:
 
     page_list = [[p["source"], p["page"]] for p in pages]
     for v in VARIANTS:
-        out[v].flush()
+        t1 = time.time()
+        np.save(work / v / "vectors.npy", out.pop(v))
+        if v in scales:
+            np.save(work / v / "scales.npy", scales.pop(v))
+        print(f"  saved {v} ({time.time() - t1:.0f}s)", flush=True)
         off = pooled_off if v.startswith("pooled") else offsets
         np.save(work / v / "offsets.npy", off)
         (work / v / "pages.json").write_text(json.dumps(page_list, ensure_ascii=False), encoding="utf-8")
@@ -102,8 +107,6 @@ def build(emb: Path, work: Path, manifest: dict) -> None:
             "scales": "scales.npy" if is_int8 else None, "pool_factor": POOL if v.startswith("pooled") else 1,
             "model_id": manifest.get("model_id", MODEL_ID), "render_scale": manifest.get("render_scale"),
             "n_pages": len(pages), "n_vectors": int(off[-1])}, indent=1), encoding="utf-8")
-    for v in ("full_fp16", "pooled"):
-        (work / v / "scales.npy").unlink(missing_ok=True)
     print(f"built {len(VARIANTS)} variants in {time.time() - t0:.0f}s")
 
 
