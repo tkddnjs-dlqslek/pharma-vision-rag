@@ -26,6 +26,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from mcp.server.mcpserver import Image, MCPServer  # noqa: E402  (mcp 2.x; FastMCP was renamed MCPServer)
 from mcp.server.mcpserver.exceptions import ToolError  # noqa: E402
 
+from pharma_vision_rag.retriever.vision_remote import RemoteEncoderError, encoder_from_env  # noqa: E402  (numpy + stdlib only)
+
 VISION_INDEX_DIR = ROOT / "data" / "embeddings" / "vision_index"
 MAX_IMAGE_BYTES = 1_000_000  # larger PNGs are re-encoded as JPEG
 
@@ -92,8 +94,12 @@ def search_pages(query: str, document_ids: list[str] | None = None, k: int = 5) 
         if not LocalVisionIndex.available(VISION_INDEX_DIR):
             raise ToolError(f"Vision page search is not installed (no index at {VISION_INDEX_DIR}). "
                             "Use search_text instead.")
-        _vision = LocalVisionIndex(VISION_INDEX_DIR)
-    hits = _vision.search(query, k=max(1, min(int(k), 20)), document_ids=document_ids or None)
+        # RunPod query encoder when RUNPOD_API_KEY/RUNPOD_ENDPOINT_ID are set, else the 3B model on CPU
+        _vision = LocalVisionIndex(VISION_INDEX_DIR, encoder=encoder_from_env())
+    try:
+        hits = _vision.search(query, k=max(1, min(int(k), 20)), document_ids=document_ids or None)
+    except RemoteEncoderError as e:
+        raise ToolError(f"Vision page search failed: {e}. Use search_text instead.") from None
     return json.dumps([{"source": d, "page": p, "score": round(float(s), 3)} for d, p, s in hits], ensure_ascii=False)
 
 
