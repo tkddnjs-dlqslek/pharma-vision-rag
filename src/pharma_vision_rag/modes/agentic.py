@@ -240,7 +240,7 @@ class AgenticMode:
     def _tool_list_documents(self) -> dict[str, Any]:
         return {"content": json.dumps(list(self._load_corpus().values()), ensure_ascii=False), "is_error": False}
 
-    def _tool_search_text(self, query: str, document_ids: list[str] | None) -> dict[str, Any]:
+    def _tool_search_text(self, query: str, document_ids: list[str] | None, k: int = 5) -> dict[str, Any]:
         if self.text_retriever == "dense":
             hits = self._search_text_dense(query, document_ids)
         else:
@@ -254,7 +254,7 @@ class AgenticMode:
                 allowed = set(document_ids)
                 raw = [h for h in raw if h.get("source") in allowed]
             hits = [{"source": h["source"], "page": h["page"], "block_type": h.get("block_type"),
-                     "text": h["text"][:400], "score": round(float(h["score"]), 4)} for h in raw[:5]]
+                     "text": h["text"][:400], "score": round(float(h["score"]), 4)} for h in raw[:k]]
         return {"content": json.dumps(hits, ensure_ascii=False), "is_error": False}
 
     def _search_text_dense(self, query: str, document_ids: list[str] | None) -> list[dict[str, Any]]:

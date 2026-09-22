@@ -1,7 +1,8 @@
 """Bundle everything the GPU box needs into one upload: data/embeddings/runpod_input.zip.
 
 Contents (flat): every corpus PDF from data/pdf/corpus/, eval/corpus.json, eval/questions.jsonl,
-scripts/embed_pages_gpu.py. Re-run after changing the corpus, the questions or the GPU script.
+scripts/embed_pages_gpu.py, and for the compact vision index scripts/24_vision_index_gpu.py with the two numpy-only
+modules it imports (retriever/vision_local.py, eval/metrics.py). Re-run after changing any of them.
 
 Usage:
     PYTHONIOENCODING=utf-8 python scripts/16_make_runpod_bundle.py
@@ -19,7 +20,9 @@ OUT = ROOT / "data" / "embeddings" / "runpod_input.zip"
 def main() -> None:
     corpus = json.loads((ROOT / "eval" / "corpus.json").read_text(encoding="utf-8"))
     files = [ROOT / "data" / "pdf" / "corpus" / d["id"] for d in corpus]
-    files += [ROOT / "eval" / "corpus.json", ROOT / "eval" / "questions.jsonl", ROOT / "scripts" / "embed_pages_gpu.py"]
+    files += [ROOT / "eval" / "corpus.json", ROOT / "eval" / "questions.jsonl", ROOT / "scripts" / "embed_pages_gpu.py",
+              ROOT / "scripts" / "24_vision_index_gpu.py", ROOT / "src" / "pharma_vision_rag" / "retriever" / "vision_local.py",
+              ROOT / "src" / "pharma_vision_rag" / "eval" / "metrics.py"]
     missing = [str(f) for f in files if not f.exists()]
     if missing:
         raise SystemExit(f"missing: {missing}")

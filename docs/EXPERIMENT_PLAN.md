@@ -311,6 +311,63 @@ CPU(RAM 16GB)로 돌릴 수 없기 때문. GPU 엔드포인트를 상시로 띄�
 
 `06_index_nemotron.py`(터널 방식)는 docstring에 deprecated 표기. `02_nemotron_tunnel.ipynb`는 fallback으로만.
 
+### 4.1 새 질문용 로컬 비전 인덱스: RunPod 실행 절차 (2026-09-22, 미실행)
+
+1. 목적
+
+   □ 벤치마크 120질의 밖의 임의 질문을 로컬에서 비전 검색 (MCP 서버가 사용)
+   □ 페이지 임베딩 전체(fp16 18.9GB) 대신 압축 변형을 내려받아 `retriever/vision_local.py`의 `LocalVisionIndex`로 조회
+
+2. 변형과 선택 규칙 (`scripts/24_vision_index_gpu.py`)
+
+   | 변형 | 내용 | 예상 크기 |
+   |---|---|---|
+   | full_fp16 | 기준선, 전체 패치 fp16 | 18.9GB |
+   | int8 | 벡터별 대칭 int8 + fp32 스케일 | 9.5GB |
+   | pooled | 인접 4개 벡터 평균 후 평균 노름으로 재조정, fp16 | 4.7GB |
+   | pooled_int8 | pooled 후 int8 | 2.4GB |
+
+   □ 선택: R@5가 full_fp16 대비 0.01 이내인 변형 중 최소 크기, 없으면 int8
+   □ 지표: runner와 같은 gold 그룹 기준 R@1, R@5, 차트(A) R@5, fp16 대비 top-5 일치율, GPU 질의당 MaxSim 시간
+   □ pooled 한계: 토큰 순서상 1차원 4개 묶음임 (2x2 공간 풀링 아님, 타일 경계와 특수 토큰이 섞일 수 있음)
+
+3. Pod 사양
+
+   □ GPU: A40 또는 L40S 48GB (full_fp16 19GB를 GPU에 올려 시간 측정. 24GB급이면 해당 변형만 호스트 스트리밍으로 표시됨)
+   □ 템플릿: RunPod PyTorch, 컨테이너 디스크 30GB, Volume Disk 100GB를 `/workspace`에 마운트
+   □ 예상: 임베딩 약 1~1.5시간, 변형 생성과 채점 약 20분, 총 $1~3 (단가는 실행 시점 RunPod 가격 확인 필요)
+
+4. 실행 순서
+
+   1) 로컬에서 번들 재생성: `PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe scripts/16_make_runpod_bundle.py`
+   2) `data/embeddings/runpod_input.zip`(87MB)을 Pod의 `/workspace`에 업로드
+   3) Pod 터미널에서 마운트 확인: `df -h /workspace` (Volume이 `/workspace`에 없으면 중단)
+   4) Pod 터미널에서 한 줄 실행 (재실행 시 기존 `.npy`와 변형은 건너뜀)
+
+   ```bash
+   cd /workspace && mkdir -p input && unzip -o runpod_input.zip -d input && pip install -q "transformers>=4.45,<5" accelerate einops sentencepiece pypdfium2 Pillow huggingface_hub hf_transfer && python input/embed_pages_gpu.py --input input --out out --batch 4 --only embed && python input/24_vision_index_gpu.py --emb out --questions input/questions.jsonl 2>&1 | tee vidx.log
+   ```
+
+   5) 로그 끝의 비교표와 `chosen:` 행 확인. 자동 선택을 바꿀 때는 `--variant int8`처럼 지정해 24만 재실행
+
+5. 내려받을 것
+
+   □ `/workspace/vision_index_dl/` 폴더 전체 (벡터 2GB 단위 분할본 `vectors.npy.partNNN`, `parts.json`, `offsets.npy`, `pages.json`, `meta.json`, int8이면 `scales.npy`, 비교표 `vision_index_compare.json`)
+   □ 권장 전송: Pod에서 `runpodctl send vision_index_dl`, 로컬에서 `runpodctl receive <코드>` (분할본은 Jupyter 파일 브라우저로 개별 재시도 가능)
+   □ 저장 위치: `data/embeddings/vision_index/` (폴더 안에 파일이 바로 오도록)
+   □ 확인 후 Pod 삭제 (Volume 과금 방지)
+
+6. 로컬 검증
+
+   ```bash
+   PYTHONIOENCODING=utf-8 PYTHONPATH=src .venv/Scripts/python.exe scripts/25_check_vision_index.py
+   ```
+
+   □ 분할본 sha256 확인 후 `vectors.npy`로 합치고 분할본 삭제
+   □ 120질의를 저장된 질의 임베딩으로 검색해 `vision_rankings.json` top-5와 비교 (모델 불필요)
+   □ 통과 기준: top-5 평균 일치율 0.9 이상, R@5 하락 0.02 이내
+   □ `--live 3` 추가 시 실제 Nemotron 질의 인코더(CPU, bf16 약 7GB RAM)로 인코딩 시간 측정
+
 ## 5. 실행 순서와 실행 환경
 
 | 순서 | 작업 | 환경 | 산출물 |

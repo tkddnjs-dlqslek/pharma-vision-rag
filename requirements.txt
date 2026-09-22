@@ -43,6 +43,7 @@ pydantic>=2.9.0                # Schema validation
 rich>=13.9.0                   # Pretty console output
 tqdm>=4.67.0                   # Progress bars
 httpx>=0.27.0                  # Async HTTP (Colab tunnel client)
+mcp>=2.2,<3                    # MCP server for Claude Desktop/Code (src/pharma_vision_rag/mcp_server.py); 2.x renamed FastMCP to MCPServer
 
 # ─── Dev / test ───
 pytest>=8.3.0

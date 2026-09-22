@@ -117,6 +117,34 @@ The GPU outputs the local runner needs are small (rankings, text vectors, query 
 patch embeddings are regenerated on demand (about $2 and one hour on RunPod). Windows setup notes and known
 pitfalls are in [CLAUDE.md](CLAUDE.md).
 
+## Use it from Claude Desktop
+
+`src/pharma_vision_rag/mcp_server.py` is a stdio MCP server exposing the agentic benchmark's tools
+(`list_documents`, `search_text`, `search_pages`, `open_page`, `calculate`) over the 27-document corpus, so you can
+ask new questions (Korean or English). It needs the corpus PDFs and `data/embeddings/v2/text/text_chunks.jsonl`
+locally; `search_pages` answers only when the local vision index is installed, otherwise it tells Claude to use
+`search_text`. Run it as a file, not with `-m` (the package import pulls torch).
+
+Add to `claude_desktop_config.json` (Windows: `%APPDATA%\Claude\claude_desktop_config.json`), adjusting the paths:
+
+```json
+{
+  "mcpServers": {
+    "pharma-corpus": {
+      "command": "C:\\Users\\user\\Desktop\\pharma-vision-rag\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\Users\\user\\Desktop\\pharma-vision-rag\\src\\pharma_vision_rag\\mcp_server.py"],
+      "env": {"PYTHONIOENCODING": "utf-8"}
+    }
+  }
+}
+```
+
+Claude Code equivalent:
+
+```bash
+claude mcp add pharma-corpus --env PYTHONIOENCODING=utf-8 -- C:\Users\user\Desktop\pharma-vision-rag\.venv\Scripts\python.exe C:\Users\user\Desktop\pharma-vision-rag\src\pharma_vision_rag\mcp_server.py
+```
+
 ## License
 
 This project's own code, question set and evaluation scripts are **MIT-licensed**.
