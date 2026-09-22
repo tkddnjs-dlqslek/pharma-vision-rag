@@ -18,10 +18,12 @@ from __future__ import annotations
 import base64
 import io
 from pathlib import Path
-from typing import Any, Union
+from typing import TYPE_CHECKING, Any, Union
 
-import anthropic
 from PIL import Image
+
+if TYPE_CHECKING:  # the SDK import costs ~2 s; only pay it when a real client is built
+    import anthropic
 
 ImageInput = Union[Path, str, bytes, Image.Image]
 
@@ -74,7 +76,10 @@ class ClaudeVisionGenerator:
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
         max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> None:
-        self.client = client or anthropic.Anthropic()
+        if client is None:
+            import anthropic
+            client = anthropic.Anthropic()
+        self.client = client
         self.model = model
         self.system_prompt = system_prompt
         self.max_tokens = max_tokens

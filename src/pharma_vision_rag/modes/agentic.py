@@ -45,13 +45,14 @@ import json
 import operator
 import time
 from pathlib import Path
-from typing import Any
-
-import anthropic
+from typing import TYPE_CHECKING, Any
 
 from pharma_vision_rag.eval.pricing import cost_usd
 from pharma_vision_rag.generator.claude_vision import DEFAULT_MODEL, _image_to_base64
 from pharma_vision_rag.utils.pdf import render_page
+
+if TYPE_CHECKING:  # ~2 s to import; the CLI tools (scripts/19) never build a client
+    import anthropic
 
 ROOT = Path(__file__).resolve().parents[3]
 CORPUS_PATH = ROOT / "eval" / "corpus.json"
@@ -190,10 +191,6 @@ def _load_bm25_module():
     return module
 
 
-def _load_chunks(path: Path) -> list[dict[str, Any]]:
-    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
-
-
 class AgenticMode:
     """Single Claude agent with tool use over the pharma corpus. See module docstring."""
 
@@ -212,7 +209,10 @@ class AgenticMode:
         max_tool_calls: int = MAX_TOOL_CALLS,
         vision_rankings_path: Path = VISION_RANKINGS_PATH,
     ) -> None:
-        self.client = client or anthropic.Anthropic()
+        if client is None:
+            import anthropic
+            client = anthropic.Anthropic()
+        self.client = client
         self.model = model
         self.corpus_path = Path(corpus_path)
         self.pdf_dir = Path(pdf_dir)
@@ -246,7 +246,7 @@ class AgenticMode:
         else:
             if self._bm25 is None:
                 bm25_mod = _load_bm25_module()
-                self._bm25 = bm25_mod.BM25Index(_load_chunks(self.text_chunks_path))
+                self._bm25 = bm25_mod.load_or_build(self.text_chunks_path)
             # Filter before cutting the pool: cutting to the global top-BM25_POOL first returned nothing
             # whenever the requested documents ranked outside it (seen in the E4 runs, 2026-09-21).
             raw = self._bm25.search(query, k=len(self._bm25.chunks) if document_ids else BM25_POOL)

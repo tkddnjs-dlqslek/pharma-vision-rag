@@ -139,6 +139,10 @@ def test_search_text_document_filter_applies_before_pool_cut(tmp_path):
     mode = agentic.AgenticMode(client=FakeAnthropic([]), text_chunks_path=path)
     hits = json.loads(mode._tool_search_text("net debt", ["b.pdf"])["content"])
     assert [(h["source"], h["page"]) for h in hits] == [("b.pdf", 1)]
+    # second process: index comes from the pickle cache written next to the chunks, same answer
+    assert path.with_suffix(".bm25.pkl").exists()
+    again = agentic.AgenticMode(client=FakeAnthropic([]), text_chunks_path=path)
+    assert json.loads(again._tool_search_text("net debt", ["b.pdf"])["content"]) == hits
 
 
 def test_search_pages_vision_exact_question_only(tmp_path):

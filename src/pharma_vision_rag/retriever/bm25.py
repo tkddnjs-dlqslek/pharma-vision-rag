@@ -13,9 +13,13 @@ matching against an English-only corpus, not a bug.
 """
 from __future__ import annotations
 
+import json
 import math
+import os
+import pickle
 import re
 from collections import Counter, defaultdict
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -66,6 +70,35 @@ class BM25Index:
         hit_idx = np.flatnonzero(scores)
         top = hit_idx[np.argsort(-scores[hit_idx])][:k]
         return [{**self.chunks[i], "score": float(scores[i])} for i in top]
+
+
+def load_or_build(chunks_path: Path, cache_path: Path | None = None) -> BM25Index:
+    """BM25Index over a chunks .jsonl, pickled next to it after the first build.
+
+    Building over the 15k-chunk corpus takes ~1.5 s and the agent CLI (scripts/19) is a new process
+    per tool call, so it rebuilt the index every call. The cache is keyed on the chunks file's size
+    and mtime and rebuilt when either changes. It is a local derived file written by this function.
+    """
+    chunks_path = Path(chunks_path)
+    cache_path = Path(cache_path) if cache_path else chunks_path.with_suffix(".bm25.pkl")
+    st = chunks_path.stat()
+    stamp = (st.st_size, st.st_mtime_ns)
+    if cache_path.exists():
+        try:
+            state = pickle.loads(cache_path.read_bytes())
+            if state.pop("_stamp", None) == stamp:
+                idx = BM25Index.__new__(BM25Index)
+                idx.__dict__.update(state)
+                return idx
+        except Exception:  # noqa: BLE001 - corrupt or foreign cache: rebuild below
+            pass
+    chunks = [json.loads(l) for l in chunks_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    idx = BM25Index(chunks)
+    state = {**vars(idx), "postings": dict(idx.postings), "_stamp": stamp}
+    tmp = cache_path.with_name(f"{cache_path.name}.{os.getpid()}.tmp")  # parallel agents may build at once
+    tmp.write_bytes(pickle.dumps(state, protocol=pickle.HIGHEST_PROTOCOL))
+    os.replace(tmp, cache_path)
+    return idx
 
 
 def _self_check() -> None:

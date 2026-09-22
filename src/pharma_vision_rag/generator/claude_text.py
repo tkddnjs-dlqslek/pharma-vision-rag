@@ -7,9 +7,10 @@ Cheap and fast. Kept separate from ClaudeVisionGenerator because:
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import anthropic
+if TYPE_CHECKING:  # the SDK import costs ~2 s; only pay it when a real client is built
+    import anthropic
 
 DEFAULT_MODEL = "claude-haiku-4-5"
 DEFAULT_MAX_TOKENS = 256
@@ -24,7 +25,10 @@ class ClaudeTextGenerator:
         model: str = DEFAULT_MODEL,
         max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> None:
-        self.client = client or anthropic.Anthropic()
+        if client is None:
+            import anthropic
+            client = anthropic.Anthropic()
+        self.client = client
         self.model = model
         self.max_tokens = max_tokens
 
