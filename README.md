@@ -11,35 +11,37 @@
 ## Results in one table
 
 120 queries (60 questions x KO/EN), answer accuracy with correct = 1, partial = 0.5. Every answer was generated
-**twice, independently**, and all answers from every arm were pooled, anonymized and judged blind with one rubric.
-The headline number is the mean of the two runs.
+**independently several times** (fixed arms twice, agents three times), and all answers from every arm were pooled,
+anonymized and judged blind with one rubric. The headline number is the mean over all runs of each arm.
 
-| Arm | Retrieval R@5 | Answer (mean) | Run 1 | Run 2 | Charts | Tables | Prose | Multi-hop | EN / KO |
-|---|---|---|---|---|---|---|---|---|---|
-| text_rerank (BGE-M3 + reranker) | 0.72 | 0.59 | 0.59 | 0.59 | 0.64 | 0.49 | 0.91 | 0.36 | 0.65 / 0.53 |
-| vision (Nemotron ColEmbed, MaxSim) | 0.88 | 0.79 | 0.79 | 0.79 | 0.88 | 0.85 | 0.80 | 0.49 | 0.81 / 0.77 |
-| hybrid_rerank (RRF of both) | 0.89 | 0.77 | 0.75 | 0.78 | 0.82 | 0.83 | 0.90 | 0.39 | 0.78 / 0.75 |
-| agentic, BM25 only (E4) | n/a | 0.84 | 0.87 | 0.81 | 0.82 | 0.89 | 0.76 | 0.84 | 0.83 / 0.84 |
-| **agentic, BM25 + vision (E4b)** | n/a | **0.91** | 0.93 | 0.90 | **0.91** | **0.92** | 0.86 | **0.95** | 0.93 / 0.89 |
+| Arm | Retrieval R@5 | Answer (mean) | Run 1 | Run 2 | Run 3 | Charts | Tables | Prose | Multi-hop | EN / KO |
+|---|---|---|---|---|---|---|---|---|---|---|
+| text_rerank (BGE-M3 + reranker) | 0.72 | 0.59 | 0.59 | 0.59 | | 0.64 | 0.49 | 0.91 | 0.36 | 0.65 / 0.53 |
+| vision (Nemotron ColEmbed, MaxSim) | 0.88 | 0.79 | 0.79 | 0.79 | | 0.88 | 0.85 | 0.80 | 0.49 | 0.81 / 0.77 |
+| hybrid_rerank (RRF of both) | 0.89 | 0.77 | 0.75 | 0.78 | | 0.82 | 0.83 | 0.90 | 0.39 | 0.78 / 0.75 |
+| agentic, BM25 only (E4) | n/a | 0.84 | 0.87 | 0.81 | 0.86 | 0.82 | 0.89 | 0.77 | 0.87 | 0.84 / 0.85 |
+| **agentic, BM25 + vision (E4b)** | n/a | **0.89** | 0.93 | 0.90 | 0.85 | **0.89** | **0.90** | 0.82 | **0.93** | 0.91 / 0.87 |
 
 - **Vision beats the best text pipeline** at both stages, identically in both runs: chart retrieval R@5 0.97 vs 0.72
   (p=0.006), answer score 0.79 vs 0.59 (43 wins, 18 losses, p=0.002). Chunking fixes, a reranker and BM25 fusion did not close the gap.
 - **Agents win on multi-hop** and nowhere else reliably: neither agent lost a single multi-hop cell to any fixed arm
-  (0-12 to 0-18). Single-shot retrieval fills its top pages with the prior-year "twin" page or with one company;
+  (0-14 to 0-18). Single-shot retrieval fills its top pages with the prior-year "twin" page or with one company;
   decomposing the question and filtering by document fixes both.
-- **With a vision tool, the agent beats vision alone** (35 wins, 13 losses, p=0.002). **Without it (BM25 only), it does not**
-  (29-20, p=0.25). Run 1 alone suggested it did (p=0.03); the second run did not reproduce that, so the claim was withdrawn.
-- **Agents are much noisier than fixed pipelines**: the same cell got the same score in both runs 80% of the time for
-  agents vs 89-94% for fixed arms. The main cause is tool choice: in run 2, one agent decided BM25 was enough, never
-  called the vision tool, and missed a prose question it had found with vision search in run 1.
-- **On charts, neither agent beats vision alone** (6-5): single-shot vision already reaches R@5 0.97 there.
+- **With a vision tool, the agent beats vision alone** over three runs (34 wins, 17 losses, p=0.024), but less clearly than
+  after two runs (p=0.002): its third run scored 0.85. **Without it (BM25 only), it does not** (31-22, p=0.27).
+  Run 1 alone suggested it did (p=0.03); later runs did not reproduce that, so the claim was withdrawn.
+- **Agents are much noisier than fixed pipelines**: the same cell got the same score across runs 79-83% of the time for
+  agents vs 89-94% for fixed arms. E4b run 1 vs run 3, same setup, differ significantly (20-5, p=0.004). The main cause
+  is tool choice: agents sometimes skip the vision tool, or run it and never open the page it found.
+- **On charts, neither agent beats vision alone** (6-7): single-shot vision already reaches R@5 0.97 there.
 - **Korean costs the text path 12 points** and the vision path 4.
 - Fixed-weight hybrid fusion did not beat vision alone (p=0.75); its R@1 is lower (0.58 vs 0.64).
 
 **Cost per answer** (measured on the subagent runs): fixed arms 13.6k tokens and 15 s (generation only, always
 three full-page images); agents 11.2-11.4k tokens and 36-37 s with 2.6-2.7 tool calls. The agents use *fewer*
 tokens because they narrow down with text snippets before opening a page, but take about 2.5 times as long,
-partly because each BM25 call rebuilds the index (about 7 s, an artifact of the CLI).
+partly because each tool call was a fresh process that re-imported the SDK and rebuilt the BM25 index. That was fixed
+before the third agent run (calls now 0.5-1 s).
 
 ## How it was run
 
@@ -50,7 +52,7 @@ partly because each BM25 call rebuilds the index (about 7 s, an artifact of the 
 | Retrieval metrics | group-based Recall@k and NDCG@k from precomputed rankings (no models on the dev box) | local, `eval/runner.py` |
 | Answer generation | top-3 pages as images, blind to arm and gold; generated by Claude Sonnet 5 subagents | `scripts/17_make_generation_tasks.py` |
 | Agentic arms | same Sonnet 5 subagents calling the tool bodies of `modes/agentic.py` as shell commands (list documents, BM25 search, open page, calculator; E4b adds vision page search), max 10 calls | `scripts/19_agentic_tools.py`, `20_make_agentic_tasks.py` |
-| Judging | 1,142 pooled answers (two generation runs), anonymized, blind judge subagents in three rounds, one rubric; each later round mixes in 40 already-judged anchors to measure judge drift (+0.013 to +0.025 per answer) | `scripts/22_blind_rejudge.py` |
+| Judging | 1,382 pooled answers (two runs of fixed arms, three of agents), anonymized, blind judge subagents in four rounds, one rubric; each later round mixes in 40 already-judged anchors to measure judge drift (-0.013 to +0.025 per answer) | `scripts/22_blind_rejudge.py` |
 
 Generation and judging went through Claude Code subagents rather than the Anthropic API (no API key during
 this phase). The API paths (`eval/generate.py`, `eval/judge.py`, the `modes/agentic.py` loop) are written and
@@ -68,15 +70,17 @@ unit-tested with a fake client, but **have not been run against the live API**.
 
 ## Known limitations
 
-- Two generation runs per arm. Enough to show the agents are noisy, not enough to pin their scores down.
+- Two generation runs per fixed arm, three per agent. Enough to show the agents are noisy (one agent's runs span
+  0.85 to 0.93), not enough to pin their scores down.
 - Until 2026-09-21 `CLAUDE.md`, which every subagent loads, held reference values for three questions (A01, A02, B08).
   Scores with those questions and the defective D03 held out are unchanged (within 0.01).
-- The agents' BM25 document filter had a bug during both runs (it filtered after cutting to the global top 50,
-  so documents outside that pool returned nothing). Fixed afterwards, with a regression test.
+- The agents' BM25 document filter had a bug during runs 1 and 2 (it filtered after cutting to the global top 50,
+  so documents outside that pool returned nothing). Fixed before run 3, with a regression test; the two
+  cross-company questions that showed the symptom (D06, D08) went from 0.56 to 1.0 for E4 in run 3.
 - The agents' vision tool only accepts the original question text (page embeddings are precomputed per
   question on a GPU box), so reformulated follow-up searches fall back to BM25. A live vision endpoint would lift this.
 - Each agent run had one cell over the 10-call budget (the API loop enforces it; subagents were only told to).
-  Scoring those as wrong moves E4 to 0.86 and E4b to 0.92.
+  Scoring those as wrong moves run 1 of E4 to 0.86 and of E4b to 0.92.
 - One question (D03) omits the company name. The question set has not had an external review.
 - Gold completeness: pages that correct answers cited outside the gold set were checked (92 candidates, 38 added
   after a render check). This raised vision's multi-hop R@5 from 0.42 to 0.62, more than it raised the text arms.

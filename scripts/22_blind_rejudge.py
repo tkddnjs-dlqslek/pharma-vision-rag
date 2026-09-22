@@ -30,14 +30,16 @@ ROOT = Path(__file__).resolve().parent.parent
 RES = ROOT / "eval" / "results"
 SCORE = {"correct": 1.0, "partial": 0.5, "wrong": 0.0}
 BASE_ARMS = ["text_rerank", "vision", "hybrid_rerank", "agentic", "agentic_vision"]
-ARMS = BASE_ARMS + [f"{a}@rep2" for a in BASE_ARMS]  # @rep2 = second, independent generation run
-AGENT_RUNS = ["agentic", "agentic_vision", "agentic_rep2", "agentic_vision_rep2"]  # <name>_answers/*.jsonl
+REPS = ["@rep2", "@rep3"]  # independent repeat generation runs (rep3: agents only, after the BM25 filter fix)
+ARMS = BASE_ARMS + [f"{a}{r}" for r in REPS for a in BASE_ARMS]
+AGENT_RUNS = ["agentic", "agentic_vision", "agentic_rep2", "agentic_vision_rep2",
+              "agentic_rep3", "agentic_vision_rep3"]  # <name>_answers/*.jsonl
 GEN_RUNS = {"gen": "gen_answers", "gen_rep2": "gen_answers_rep2"}  # src -> answers dir (same tasks, key.json)
-ROUNDS = ["r1", "r2", "r3"]
+ROUNDS = ["r1", "r2", "r3", "r4"]
 
 
 def arm_of(run: str) -> str:
-    return run.replace("_rep2", "@rep2")
+    return run.replace("_rep2", "@rep2").replace("_rep3", "@rep3")
 
 
 def _load_18():
@@ -210,24 +212,27 @@ def report() -> None:
         if n:
             print(f"  {arm:<15} same verdict {same / n:.2f} ({n} cells), first pass minus re-judge {diff / n:+.3f} per cell")
 
-    print("\nrun-to-run: first vs second independent generation run, same tasks, same rubric")
+    print("\nrun-to-run: independent generation runs, same tasks, same rubric")
     for base in BASE_ARMS:
-        rep = f"{base}@rep2"
-        both = [(s, cells[(rep, q, l)]) for (a, q, l), s in cells.items() if a == base and (rep, q, l) in cells]
-        if both:
-            m1, m2 = sum(x for x, _ in both) / len(both), sum(y for _, y in both) / len(both)
-            w, l = sum(x > y for x, y in both), sum(x < y for x, y in both)
-            print(f"  {base:<15} run1 {m1:.2f}  run2 {m2:.2f}  same cell score {sum(x == y for x, y in both) / len(both):.2f} "
-                  f"({len(both)} cells), run1 better {w}, worse {l}, p={S18.sign_test(w, l):.3f}")
+        for rep in REPS:
+            pair = [(s, cells[(base + rep, q, l)]) for (a, q, l), s in cells.items() if a == base and (base + rep, q, l) in cells]
+            if pair:
+                m1, m2 = sum(x for x, _ in pair) / len(pair), sum(y for _, y in pair) / len(pair)
+                w, l = sum(x > y for x, y in pair), sum(x < y for x, y in pair)
+                print(f"  {base:<15} run1 {m1:.2f}  {rep[1:]} {m2:.2f}  same cell score {sum(x == y for x, y in pair) / len(pair):.2f} "
+                      f"({len(pair)} cells), run1 better {w}, worse {l}, p={S18.sign_test(w, l):.3f}")
 
     base_arms = [a for a in BASE_ARMS if a in arms]
-    # Both runs averaged per (question, language) cell: the headline numbers once a second run exists.
+    # Every available run averaged per (question, language) cell: the headline numbers. Fixed arms have
+    # two runs, the agents three, so each cell's mean uses however many runs that arm has.
     avg: dict[tuple[str, str, str], float] = {}
     for (a, q, l), s in cells.items():
-        if a in BASE_ARMS and (f"{a}@rep2", q, l) in cells:
-            avg[(a, q, l)] = (s + cells[(f"{a}@rep2", q, l)]) / 2
+        if a in BASE_ARMS:
+            runs = [s] + [cells[(a + r, q, l)] for r in REPS if (a + r, q, l) in cells]
+            if len(runs) > 1:
+                avg[(a, q, l)] = sum(runs) / len(runs)
     if avg:
-        print("\nmean of both runs per cell")
+        print("\nmean of all runs per cell (fixed arms 2 runs, agents up to 3)")
         print(f"{'arm':<21}" + "".join(f"{c:>10}" for c, _ in cols))
         for arm in base_arms:
             row = []
@@ -235,7 +240,7 @@ def report() -> None:
                 vals = [s for (a, q, l), s in avg.items() if a == arm and pred(q, l)]
                 row.append(f"{sum(vals) / len(vals):.2f}" if vals else "-")
             print(f"{arm:<21}" + "".join(f"{x:>10}" for x in row))
-        print("\npaired sign tests on the two-run mean")
+        print("\npaired sign tests on the all-run mean")
         for i, a in enumerate(base_arms):
             for b in base_arms[i + 1:]:
                 for types in ("ABCD", "A", "C", "D"):
