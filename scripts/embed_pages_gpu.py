@@ -20,6 +20,10 @@ RunPod recipe (PyTorch template, 24 GB GPU, 40 GB volume):
     # no HF token needed: the model repo is public (gated=False, checked 2026-09-20; NVIDIA non-commercial license)
 
 Steps can be run separately with --only embed|docling|zip.
+
+For the compact vision index, prefer the one-pass path instead: `24_vision_index_gpu.py --embed-now` imports
+`embed_page_batch` from here and fills the variants in RAM, so the ~19 GB of page vectors never round-trip
+through the pod disk (reading them back cost 0.8 MB/s on a network-backed container disk, 2026-09-23).
 """
 from __future__ import annotations
 
@@ -63,8 +67,20 @@ def to_fp16(t) -> np.ndarray:
     return t.detach().to(torch.float16).cpu().numpy()
 
 
-def embed_pages(model, inp: Path, out: Path, docs: list[str], scale: float, batch: int, max_pages: int | None):
+def embed_page_batch(model, pdf, pages: list[int], scale: float) -> list[np.ndarray]:
+    """Render 1-based `pages` of an open pypdfium2 document and embed them: one fp16 [N_patches, dim] array each.
+
+    The single place a page turns into vectors: `embed_pages` (write to disk) and 24_vision_index_gpu.py
+    `--embed-now` (straight into the in-RAM variants) both go through it.
+    """
     import torch
+    imgs = [pdf[p - 1].render(scale=scale).to_pil().convert("RGB") for p in pages]
+    with torch.no_grad():
+        embs = as_list(model.forward_images(imgs, batch_size=len(imgs)))
+    return [to_fp16(e) for e in embs]
+
+
+def embed_pages(model, inp: Path, out: Path, docs: list[str], scale: float, batch: int, max_pages: int | None):
     pages, t0 = [], time.time()
     for doc in docs:
         out_dir = out / "pages" / doc
@@ -74,11 +90,8 @@ def embed_pages(model, inp: Path, out: Path, docs: list[str], scale: float, batc
         todo = [p for p in range(1, n + 1) if not (out_dir / f"{p}.npy").exists()]
         for i in range(0, len(todo), batch):
             part = todo[i:i + batch]
-            imgs = [pdf[p - 1].render(scale=scale).to_pil().convert("RGB") for p in part]
-            with torch.no_grad():
-                embs = as_list(model.forward_images(imgs, batch_size=len(imgs)))
-            for p, e in zip(part, embs):
-                np.save(out_dir / f"{p}.npy", to_fp16(e))
+            for p, e in zip(part, embed_page_batch(model, pdf, part, scale)):
+                np.save(out_dir / f"{p}.npy", e)
         for p in range(1, n + 1):
             arr = np.load(out_dir / f"{p}.npy", mmap_mode="r")
             pages.append({"source": doc, "page": p, "n_patches": int(arr.shape[0])})

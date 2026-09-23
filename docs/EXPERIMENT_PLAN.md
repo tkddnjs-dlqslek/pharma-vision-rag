@@ -311,7 +311,7 @@ CPU(RAM 16GB)로 돌릴 수 없기 때문. GPU 엔드포인트를 상시로 띄�
 
 `06_index_nemotron.py`(터널 방식)는 docstring에 deprecated 표기. `02_nemotron_tunnel.ipynb`는 fallback으로만.
 
-### 4.1 새 질문용 로컬 비전 인덱스: RunPod 실행 절차 (2026-09-22, 미실행)
+### 4.1 새 질문용 로컬 비전 인덱스: RunPod 실행 절차 (2026-09-23 개정. 1회 실패 후 `--embed-now` 도입)
 
 1. 목적
 
@@ -334,21 +334,39 @@ CPU(RAM 16GB)로 돌릴 수 없기 때문. GPU 엔드포인트를 상시로 띄�
 3. Pod 사양
 
    □ GPU: A40 또는 L40S 48GB (full_fp16 19GB를 GPU에 올려 시간 측정. 24GB급이면 해당 변형만 호스트 스트리밍으로 표시됨)
-   □ 템플릿: RunPod PyTorch, 컨테이너 디스크 30GB, Volume Disk 100GB를 `/workspace`에 마운트
-   □ 예상: 임베딩 약 1~1.5시간, 변형 생성과 채점 약 20분, 총 $1~3 (단가는 실행 시점 RunPod 가격 확인 필요)
+   □ 템플릿: RunPod PyTorch, 컨테이너 디스크 30GB, **Volume Disk 100GB를 `/workspace`에 마운트**(필수)
+   □ **RAM 64GB 이상**: 변형 4종 약 36GB를 RAM에 올림 (최악의 경우 페이지 배열 19GB가 반납되지 않아 약 55GB)
+   □ 예상: 임베딩 약 30분~1시간, 변형 생성과 채점 약 20분, 총 $1~3 (단가는 실행 시점 RunPod 가격 확인 필요)
 
-4. 실행 순서
+4. 실행 순서 (권장: `--embed-now` 한 번에)
+
+   □ **디스크 교훈 (2026-09-23)**: 컨테이너 디스크가 네트워크 기반인 Pod에서 페이지 `.npy` 되읽기가 0.8MB/s, 쓰기가 약 10MB/s로 떨어져 2시간 이상 걸렸고 Pod가 먼저 죽음. `--embed-now`는 페이지 벡터를 디스크에 왕복시키지 않음
+   □ 디스크에 쓰는 것은 **선택된 변형 하나뿐**(2.4~9.5GB). 변형 4종 36GB는 RAM에서 채점만 하고 버림. 느린 디스크에서 약 1시간 절약
+   □ 시작 직후 `disk i/o` 진단 줄(512MB 쓰기와 냉간 읽기 속도)을 확인할 것. 읽기가 100MB/s 미만이면 느린 Pod이므로 즉시 교체
+   □ 중간 산출물이 없어 크래시 시 임베딩을 처음부터 다시 함(경고 줄이 출력됨). 재개 가능성을 사려면 `--save-pages`(페이지 19GB)나 `--save-variants`(변형 36GB) 추가
 
    1) 로컬에서 번들 재생성: `PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe scripts/16_make_runpod_bundle.py`
    2) `data/embeddings/runpod_input.zip`(87MB)을 Pod의 `/workspace`에 업로드
    3) Pod 터미널에서 마운트 확인: `df -h /workspace` (Volume이 `/workspace`에 없으면 중단)
-   4) Pod 터미널에서 한 줄 실행 (재실행 시 기존 `.npy`와 변형은 건너뜀)
+   4) Pod 터미널에서 한 줄 실행
 
    ```bash
-   cd /workspace && mkdir -p input && unzip -o runpod_input.zip -d input && pip install -q "transformers>=4.45,<5" accelerate einops sentencepiece pypdfium2 Pillow huggingface_hub hf_transfer && python input/embed_pages_gpu.py --input input --out out --batch 4 --only embed && python input/24_vision_index_gpu.py --emb out --questions input/questions.jsonl 2>&1 | tee vidx.log
+   cd /workspace && mkdir -p input && unzip -o runpod_input.zip -d input && pip install -q "transformers>=4.45,<5" accelerate einops sentencepiece pypdfium2 Pillow huggingface_hub hf_transfer && python input/24_vision_index_gpu.py --embed-now --input input --emb out --batch 4 2>&1 | tee vidx.log
    ```
 
-   5) 로그 끝의 비교표와 `chosen:` 행 확인. 자동 선택을 바꿀 때는 `--variant int8`처럼 지정해 24만 재실행
+   5) 로그 끝의 비교표와 `chosen:` 행 확인
+      - 자동 선택을 바꿀 일이 예상되면 처음부터 `--save-variants`를 붙일 것. 안 붙였으면 `--variant int8`로 전체 재실행해야 함
+      - `--save-variants`로 변형이 디스크에 남아 있으면 임베딩 단계를 건너뜀
+
+4-1. 두 단계 경로 (이력용, 재개가 꼭 필요할 때만)
+
+   ```bash
+   python input/embed_pages_gpu.py --input input --out out --batch 4 --only embed
+   python input/24_vision_index_gpu.py --emb out --questions input/questions.jsonl
+   ```
+
+   □ 장점: `pages/<doc>/<page>.npy`와 변형 4종이 디스크에 남아 재실행 시 건너뜀
+   □ 단점: 페이지 19GB를 쓰고 다시 읽은 뒤 변형 36GB를 또 씀. 디스크가 느린 Pod에서는 사실상 불가
 
 5. 내려받을 것
 
