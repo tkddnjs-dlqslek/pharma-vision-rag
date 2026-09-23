@@ -35,6 +35,11 @@ anonymized and judged blind with one rubric. The headline number is the mean ove
   is tool choice: agents sometimes skip the vision tool, or run it and never open the page it found.
 - **On charts, neither agent beats vision alone** (6-7): single-shot vision already reaches R@5 0.97 there.
 - **Korean costs the text path 12 points** and the vision path 4.
+- **Answers are faithful to the pages they saw**: on a blind 95-answer sample, zero claims contradicted the evidence
+  pages and only one answer had an unsupported claim. Every wrong answer in that sample was faithful to a page that
+  did not hold what the question asked, so the remaining errors are retrieval and period selection, not hallucination.
+- **Citation accuracy** (share of cited pages that are gold): agents 0.86-0.93, vision and hybrid 0.77-0.79,
+  text_rerank 0.73-0.74, which cites no page at all in 27 of 120 answers.
 - Fixed-weight hybrid fusion did not beat vision alone (p=0.75); its R@1 is lower (0.58 vs 0.64).
 
 **Cost per answer** (measured on the subagent runs): fixed arms 13.6k tokens and 15 s (generation only, always
