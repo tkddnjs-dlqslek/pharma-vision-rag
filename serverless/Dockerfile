@@ -15,7 +15,8 @@ ENV BAKED_MODEL=${BAKE_MODEL} \
     PYTHONUNBUFFERED=1
 
 # query path only: no pypdfium2/docling (pages are embedded offline by scripts/embed_pages_gpu.py)
-RUN pip install --no-cache-dir "transformers>=4.45,<5" accelerate einops sentencepiece Pillow \
+# datasets is imported by the model's own remote code, not by us
+RUN pip install --no-cache-dir "transformers>=4.45,<5" accelerate einops sentencepiece datasets Pillow \
         huggingface_hub hf_transfer runpod "numpy<3"
 
 # model repo is public (gated=False, checked 2026-09-20), so no HF token is needed at build time

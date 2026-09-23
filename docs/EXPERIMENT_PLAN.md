@@ -389,7 +389,7 @@ CPU(RAM 16GB)로 돌릴 수 없기 때문. GPU 엔드포인트를 상시로 띄�
    4) Pod 터미널에서 한 줄 실행
 
    ```bash
-   cd /workspace && mkdir -p input && unzip -o runpod_input.zip -d input && pip install -q "transformers>=4.45,<5" accelerate einops sentencepiece pypdfium2 Pillow huggingface_hub hf_transfer && python input/24_vision_index_gpu.py --embed-now --input input --emb out --batch 4 2>&1 | tee vidx.log
+   cd /workspace && mkdir -p input && unzip -o runpod_input.zip -d input && pip install -q "transformers>=4.45,<5" accelerate einops sentencepiece datasets pypdfium2 Pillow huggingface_hub hf_transfer && python input/24_vision_index_gpu.py --embed-now --input input --emb out --batch 4 2>&1 | tee vidx.log
    ```
 
    5) 로그 끝의 비교표와 `chosen:` 행 확인
