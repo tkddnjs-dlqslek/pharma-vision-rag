@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -28,7 +29,9 @@ from mcp.server.mcpserver.exceptions import ToolError  # noqa: E402
 
 from pharma_vision_rag.retriever.vision_remote import RemoteEncoderError, encoder_from_env  # noqa: E402  (numpy + stdlib only)
 
-VISION_INDEX_DIR = ROOT / "data" / "embeddings" / "vision_index"
+# PHARMA_VISION_INDEX overrides; the pooled index is a quarter the size and about 4x faster per query on CPU
+VISION_INDEX_DIR = Path(os.environ.get("PHARMA_VISION_INDEX")
+                        or ROOT / "data" / "embeddings" / "vision_index_pooled")
 MAX_IMAGE_BYTES = 1_000_000  # larger PNGs are re-encoded as JPEG
 
 CORPUS_NOTE = (
@@ -94,8 +97,14 @@ def search_pages(query: str, document_ids: list[str] | None = None, k: int = 5) 
         if not LocalVisionIndex.available(VISION_INDEX_DIR):
             raise ToolError(f"Vision page search is not installed (no index at {VISION_INDEX_DIR}). "
                             "Use search_text instead.")
-        # RunPod query encoder when RUNPOD_API_KEY/RUNPOD_ENDPOINT_ID are set, else the 3B model on CPU
-        _vision = LocalVisionIndex(VISION_INDEX_DIR, encoder=encoder_from_env())
+        # RunPod query encoder when RUNPOD_API_KEY/RUNPOD_ENDPOINT_ID are set. The local fallback loads the 3B
+        # model (about 7 GB of RAM), so it needs PHARMA_VISION_LOCAL_ENCODER=1 rather than happening by surprise.
+        encoder = encoder_from_env()
+        if encoder is None and os.environ.get("PHARMA_VISION_LOCAL_ENCODER") != "1":
+            raise ToolError("Vision page search has an index but no query encoder: set RUNPOD_API_KEY and "
+                            "RUNPOD_ENDPOINT_ID (serverless/README.md), or PHARMA_VISION_LOCAL_ENCODER=1 to load "
+                            "the 3B model locally (about 7 GB of RAM). Use search_text instead.")
+        _vision = LocalVisionIndex(VISION_INDEX_DIR, encoder=encoder)
     try:
         hits = _vision.search(query, k=max(1, min(int(k), 20)), document_ids=document_ids or None)
     except RemoteEncoderError as e:
