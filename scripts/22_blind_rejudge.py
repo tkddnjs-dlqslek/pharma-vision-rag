@@ -36,6 +36,23 @@ AGENT_RUNS = ["agentic", "agentic_vision", "agentic_rep2", "agentic_vision_rep2"
               "agentic_rep3", "agentic_vision_rep3"]  # <name>_answers/*.jsonl
 GEN_RUNS = {"gen": "gen_answers", "gen_rep2": "gen_answers_rep2"}  # src -> answers dir (same tasks, key.json)
 ROUNDS = ["r1", "r2", "r3", "r4"]
+ALT_ROUND = "r5"  # alternative rubric for period-ambiguous questions; never merged into the r1-r4 verdicts
+AMBIG_RULE = """
+## Rule for questions that name no period
+
+The question text does not say which quarter or year it means, and the reference answer lists the value for several
+periods. The default rubric above would call one period `partial`; for these tasks apply this rule instead:
+
+- `correct`: the model gives the right value for at least one of the periods in the reference, with that period
+  named (quarter, half-year or year, or a date), and none of its other values contradicts the reference.
+- `partial`: the right value is given but no period is named; OR at least one value the model gives for a period
+  that IS in the reference is wrong.
+- `wrong`: no value matches any period in the reference, OR the model said it could not find the answer.
+- Values for periods the reference does not list (an earlier year, or a quarter derived from the annual total) are
+  ignored: they earn no credit and cost none. You cannot verify them, so do not treat them as wrong.
+
+Every task in this batch is one of these questions, so apply this rule to all of them.
+"""
 
 
 def arm_of(run: str) -> str:
@@ -90,6 +107,8 @@ def prepare(batch: int, rnd: str, anchors: int) -> None:
     salt = "rejudge" if rnd == "r1" else f"rejudge-{rnd}"
     if rnd == "r1":
         chosen = [(r, False) for r in rows]
+    elif rnd == ALT_ROUND:
+        chosen = [(r, False) for r in rows if qs[r["qid"]]["period_spec"] == "ambiguous"]
     else:
         earlier = ROUNDS[:ROUNDS.index(rnd)]
         seen = {(m["src"], m["task_id"]) for r_ in earlier for m in load_map(r_).values() if not m.get("anchor")}
@@ -121,6 +140,9 @@ def prepare(batch: int, rnd: str, anchors: int) -> None:
     rubric = rubric.replace(r"eval\results\judge_verdicts\batch_NN.jsonl", out_rel + r"\batch_NN.jsonl")
     rubric = rubric.replace("Do not open other batches,", "Do not open other batches, `map.json`,")
     assert out_rel in rubric and "map.json" in rubric, "rubric path rewrite failed"
+    if rnd == ALT_ROUND:
+        rubric = rubric.replace("\n## Output\n", AMBIG_RULE + "\n## Output\n")
+        assert "name no period" in rubric, "rubric rule insert failed"
     (tdir / "INSTRUCTIONS.md").write_text(rubric, encoding="utf-8")
     by_src = defaultdict(int)
     for r, is_anchor in chosen:
@@ -250,6 +272,42 @@ def report() -> None:
                             w += s > avg[(b, q, lg)]
                             l += s < avg[(b, q, lg)]
                     print(f"  {a} vs {b} [{types}]: {w} better, {l} worse, p={S18.sign_test(w, l):.4f}")
+
+    alt_map, alt_got = load_map(ALT_ROUND), verdicts(ALT_ROUND)
+    if alt_got:
+        # Rule B: period-ambiguous questions re-judged blind with an explicit rule (one correctly labelled
+        # period counts as correct). Everything else keeps its r1-r4 verdict.
+        alt = {(alt_map[aid]["src"], alt_map[aid]["task_id"]): v for aid, v in alt_got.items()}
+        cells_b = dict(cells)
+        for k, verdict in alt.items():
+            for arm, qid, lang in rows[k]["cells"]:
+                cells_b[(arm, qid, lang)] = SCORE[verdict]
+        changed = sum(1 for k, v in alt.items() if k in final and v != final[k])
+        print(f"\nrule B for period-ambiguous questions ({ALT_ROUND}: {len(alt_got)}/{len(alt_map)} answers re-judged, "
+              f"{changed} verdicts differ from rule A)")
+        avg_b: dict[tuple[str, str, str], float] = {}
+        for (a_, q, l), s_ in cells_b.items():
+            if a_ in BASE_ARMS:
+                runs = [s_] + [cells_b[(a_ + r, q, l)] for r in REPS if (a_ + r, q, l) in cells_b]
+                if len(runs) > 1:
+                    avg_b[(a_, q, l)] = sum(runs) / len(runs)
+        amb = lambda q, l: qs[q]["period_spec"] == "ambiguous"  # noqa: E731
+        print(f"{'arm (all-run mean)':<21}{'A: all':>10}{'B: all':>10}{'A: ambig':>10}{'B: ambig':>10}")
+        for arm in base_arms:
+            def m(src, pred, arm=arm):
+                vals = [s_ for (a_, q, l), s_ in src.items() if a_ == arm and pred(q, l)]
+                return f"{sum(vals) / len(vals):.2f}" if vals else "-"
+            print(f"{arm:<21}{m(avg, lambda q, l: True):>10}{m(avg_b, lambda q, l: True):>10}"
+                  f"{m(avg, amb):>10}{m(avg_b, amb):>10}")
+        print("paired sign tests on the all-run mean under rule B [ABCD]")
+        for i, a_ in enumerate(base_arms):
+            for b_ in base_arms[i + 1:]:
+                w = l = 0
+                for (arm, q, lg), s_ in avg_b.items():
+                    if arm == a_ and (b_, q, lg) in avg_b:
+                        w += s_ > avg_b[(b_, q, lg)]
+                        l += s_ < avg_b[(b_, q, lg)]
+                print(f"  {a_} vs {b_}: {w} better, {l} worse, p={S18.sign_test(w, l):.4f}")
 
     print("\npaired sign tests on score (run 1)")
     for i, a in enumerate(base_arms):
