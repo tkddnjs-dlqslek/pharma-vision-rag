@@ -19,7 +19,9 @@ import modal
 
 APP_NAME = "pharma-vision-encoder"
 MODEL_ID = "nvidia/llama-nemotron-colembed-vl-3b-v2"
-GPU = os.environ.get("MODAL_GPU", "L4")     # 24 GB, bf16 native; T4 works too (bf16 emulated, slower)
+GPU = os.environ.get("MODAL_GPU", "L4")     # 24 GB, bf16 native; T4 works too. "none" = CPU only (no card needed)
+CPU_ONLY = GPU.lower() == "none"
+RESOURCES = dict(cpu=8.0, memory=24_576) if CPU_ONLY else {}   # 3B bf16 needs ~7 GB, fp32 fallback ~14 GB
 MAX_QUERIES, MAX_CHARS = 16, 2_000
 
 image = (
@@ -47,13 +49,14 @@ def parse_queries(qs) -> list[str]:
     return qs
 
 
-@app.cls(image=image, gpu=GPU, volumes={"/hf": weights}, scaledown_window=60, timeout=600)
+@app.cls(image=image, gpu=None if CPU_ONLY else GPU, volumes={"/hf": weights}, scaledown_window=120, timeout=900, **RESOURCES)
 class Encoder:
     @modal.enter()
     def load(self):
         import torch
         from transformers import AutoModel
-        self.model = AutoModel.from_pretrained(MODEL_ID, device_map="cuda", trust_remote_code=True,
+        device = "cpu" if CPU_ONLY else "cuda"
+        self.model = AutoModel.from_pretrained(MODEL_ID, device_map=device, trust_remote_code=True,
                                                torch_dtype=torch.bfloat16).eval()
         floats = (torch.float32, torch.float16, torch.bfloat16, torch.float64)
         for t in list(self.model.parameters()) + list(self.model.buffers()):
