@@ -73,11 +73,56 @@ def runpod_query_encoder(endpoint_id: str, api_key: str, timeout: float = TIMEOU
 
 
 def encoder_from_env():
-    """Remote encoder when RUNPOD_API_KEY and RUNPOD_ENDPOINT_ID are set (env wins over .env), else None."""
+    """RunPod encoder when its keys are set, else the Modal encoder when a Modal token exists, else None.
+
+    VISION_ENCODER=runpod|modal|none forces the choice (env wins over .env)."""
     try:
         from dotenv import load_dotenv
         load_dotenv(ROOT / ".env")
     except ImportError:
         pass
     key, endpoint = os.environ.get("RUNPOD_API_KEY", "").strip(), os.environ.get("RUNPOD_ENDPOINT_ID", "").strip()
-    return runpod_query_encoder(endpoint, key) if key and endpoint else None
+    choice = os.environ.get("VISION_ENCODER", "auto").strip().lower()  # auto | runpod | modal | none
+    if choice == "runpod" or (choice == "auto" and key and endpoint):
+        return runpod_query_encoder(endpoint, key)
+    if choice == "modal" or (choice == "auto" and modal_token_present()):
+        return modal_query_encoder()
+    return None
+
+
+# ─── Modal (serverless/modal_app.py) ──────────────────────────────────────
+
+MODAL_APP, MODAL_CLASS = "pharma-vision-encoder", "Encoder"
+
+
+def modal_query_encoder(app: str = MODAL_APP, cls: str = MODAL_CLASS, lookup=None):
+    """Encoder backed by the deployed Modal class. Needs the Modal token (~/.modal.toml), no keys of its own.
+
+    `lookup` (tests) replaces modal.Cls.from_name; it must return an object with `.encode.remote(list) -> list`.
+    """
+    holder = {}
+
+    def encode(query: str) -> np.ndarray:
+        if "cls" not in holder:
+            try:
+                if lookup is not None:
+                    holder["cls"] = lookup(app, cls)
+                else:
+                    import modal
+                    holder["cls"] = modal.Cls.from_name(app, cls)()
+            except Exception as e:  # noqa: BLE001 - surfaced as one clear message to the tool caller
+                raise RemoteEncoderError(
+                    f"Modal encoder unavailable ({type(e).__name__}: {e}). Deploy it with "
+                    "`modal deploy serverless/modal_app.py` after `modal token new`.") from None
+        try:
+            items = holder["cls"].encode.remote([query])
+        except Exception as e:  # noqa: BLE001
+            raise RemoteEncoderError(f"Modal encode failed ({type(e).__name__}: {e})") from None
+        if not items:
+            raise RemoteEncoderError("Modal encoder returned no embedding")
+        return decode_embedding(items[0])
+    return encode
+
+
+def modal_token_present() -> bool:
+    return bool(os.environ.get("MODAL_TOKEN_ID")) or (Path.home() / ".modal.toml").exists()

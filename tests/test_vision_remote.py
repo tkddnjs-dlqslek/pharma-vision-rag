@@ -120,3 +120,48 @@ def test_encoder_from_env():
             assert vr.encoder_from_env() is None
         with mock.patch.dict(vr.os.environ, {"RUNPOD_API_KEY": "k", "RUNPOD_ENDPOINT_ID": "ep"}):
             assert callable(vr.encoder_from_env())
+
+
+def test_modal_encoder_round_trip_with_fake_class():
+    import importlib.util
+    from pathlib import Path
+    import numpy as np
+    from pharma_vision_rag.retriever import vision_remote as vr
+    spec = importlib.util.spec_from_file_location(
+        "_handler", Path(__file__).resolve().parents[1] / "serverless" / "handler.py")
+    handler = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(handler)
+    ref = np.random.default_rng(0).standard_normal((7, 8)).astype(np.float32)
+
+    class FakeMethod:
+        def remote(self, queries):
+            assert queries == ["hello"]
+            return [handler.encode_array(ref)]
+
+    class FakeCls:
+        encode = FakeMethod()
+
+    enc = vr.modal_query_encoder(lookup=lambda app, cls: FakeCls())
+    out = enc("hello")
+    assert out.shape == (7, 8) and np.allclose(out, ref.astype(np.float16).astype(np.float32))
+
+
+def test_modal_encoder_reports_missing_deployment():
+    import pytest
+    from pharma_vision_rag.retriever import vision_remote as vr
+
+    def boom(app, cls):
+        raise RuntimeError("not found")
+    enc = vr.modal_query_encoder(lookup=boom)
+    with pytest.raises(vr.RemoteEncoderError, match="modal deploy"):
+        enc("x")
+
+
+def test_encoder_from_env_honours_explicit_choice(monkeypatch):
+    from pharma_vision_rag.retriever import vision_remote as vr
+    monkeypatch.setenv("VISION_ENCODER", "none")
+    monkeypatch.setenv("RUNPOD_API_KEY", "k")
+    monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "e")
+    assert vr.encoder_from_env() is None
+    monkeypatch.setenv("VISION_ENCODER", "modal")
+    assert callable(vr.encoder_from_env())
