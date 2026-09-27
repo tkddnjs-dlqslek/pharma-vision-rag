@@ -121,7 +121,10 @@ RunPod(RTX 4090, 1시간 이내, 약 $1)에서 한 번에 생성. 형식별 비�
 - MCP 서버는 `data/embeddings/vision_index_pooled`를 기본으로 씀(`PHARMA_VISION_INDEX`로 변경 가능).
 - **질의 인코더는 아직 없음**: 새 질문을 벡터로 바꾸려면 Nemotron 3B가 필요한데 개발 PC 여유 RAM으로는 안 됨.
   RunPod Serverless(`serverless/`)를 배포하거나 `PHARMA_VISION_LOCAL_ENCODER=1`로 로컬 로드. 미배포 상태.
-- 남은 개선: CPU MaxSim 8.9초를 줄이는 작업(블록 크기와 dtype 조정). 미착수.
+- **CPU 검색 속도 개선(2026-09-27)**: 질의당 8.9초에서 **3.4초**(중앙값, 120질의 동일 top-5). 문서 필터 시 0.24초에서 0.09초.
+  바꾼 것: 패딩된 0 토큰 제거(정확한 연산, GEMM 절반), 인덱스 3GB 이하면 mmap 대신 RAM 상주, int8에서 float32 변환을 torch `copy_`로
+  멀티스레드화(5.1초에서 1.1초), 청크 16k행. 남은 2.1초는 fp32 GEMM 자체(이 CPU에서 55~90 GFLOPS)라 정확도를 포기하지 않는 한 더 줄이기 어려움.
+  torch matmul, bf16, int8 matmul, fbgemm, 캐스트와 GEMM 겹치기는 모두 효과 없거나 느려서 버림.
 
 **근거성(faithfulness)과 인용 정확도 (2026-09-23, `scripts/27_faithfulness.py`)**
 
