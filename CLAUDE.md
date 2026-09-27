@@ -66,12 +66,16 @@ API 키와 크레딧이 없어서 **답변 생성과 채점은 Anthropic API 대
    (고정 방식 2회, 에이전트 3회): text_rerank 0.59, vision 0.79, hybrid_rerank 0.77, E4 0.84, **E4b 0.89**.
    E4b 대 vision은 여전히 유의(p=0.024)하지만 약해짐(3회차 E4b 0.85). E4b 대 E4는 p=0.020으로 유의해짐. E4 대 vision은 계속 유의하지 않음(p=0.27).
    E4b 1회차 대 3회차가 p=0.004로 달라서 에이전트 점수는 여러 회차 평균으로만 말할 것. 상세는 계획서 0절, FAILURE_ANALYSIS 8.5.
-11. **[진행 중 2026-09-23] MCP 서버와 새 질문용 비전 검색.** `src/pharma_vision_rag/mcp_server.py`(Claude Desktop용, 텍스트 도구는 동작 확인),
-   `retriever/vision_local.py`(로컬 인덱스 MaxSim), `retriever/vision_remote.py` + `serverless/`(RunPod Serverless 질의 인코더, 미배포).
-   사용자가 RunPod A40 Pod에서 `24_vision_index_gpu.py` 실행 중(형식 4종 비교 후 선택본을 `data/embeddings/vision_index/`로 받을 예정).
-   받으면: `scripts/25_check_vision_index.py`로 재현 확인, 형식별 표를 계획서 4.1절에 기록, 이후 Serverless 배포(`serverless/README.md`).
-   RunPod 교훈: 익명 HF 요청은 429로 막힘(`export HF_HUB_OFFLINE=1`로 해결), Container Disk는 캐시 밖 읽기가 초당 1~4MB로 느림.
-12. **남은 선택 과제**: D03 질문에 회사명 넣기(RunPod에서 페이지 임베딩 재생성 약 1시간 $2 + 해당 셀 재생성과 재채점),
+11. **[2026-09-24] MCP 서버와 새 질문용 비전 검색.** `src/pharma_vision_rag/mcp_server.py`(Claude Desktop용 stdio 서버, 도구 5개).
+   텍스트 도구는 동작 확인, 비전 검색은 인덱스 연결까지 끝남. RunPod RTX 4090에서 `24_vision_index_gpu.py --embed-now`로 1시간 이내 생성(약 $1).
+   int8(9.5GB)을 받아 `scripts/26_pool_local_index.py`로 로컬에서 pooled_int8(2.4GB)로 줄임(12분, GPU 불필요).
+   MCP 기본 인덱스는 `data/embeddings/vision_index_pooled`(`PHARMA_VISION_INDEX`로 변경). 수치와 형식 비교표는 계획서 0절 "로컬 비전 인덱스".
+   **미완: 질의 인코더.** 새 질문을 벡터로 바꾸려면 `serverless/`(RunPod Serverless) 배포와 `.env`의 `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID`가 필요함.
+   없으면 MCP가 "인코더 없음"으로 안내하고 텍스트 검색으로 유도함(`PHARMA_VISION_LOCAL_ENCODER=1`이면 로컬 3B 로드, RAM 약 7GB 필요).
+   RunPod 교훈: 익명 HF 요청은 429(`export HF_HUB_OFFLINE=1`), 모델 원격 코드가 `datasets`를 요구함, Container Disk는 캐시 밖 읽기가 느림(Volume Disk를 쓸 것).
+12. **[완료 2026-09-23] RAG 검증 보강.** `scripts/27_faithfulness.py`. 근거성 표본 95건 blind 채점(모순 0건, 근거 없는 주장 1건),
+   인용 정확도는 전 방식 전 회차(텍스트 0.73, 비전 0.77~0.79, 에이전트 0.86~0.93). 표본의 오답은 전부 "근거는 맞고 답이 틀린" 경우였음. 상세는 계획서 0절.
+13. **남은 선택 과제**: Serverless 인코더 배포, 비전 검색 CPU 속도 개선(질의당 8.9초), D03 질문에 회사명 넣기(RunPod 재임베딩),
    실제 API 경로 파일럿(키 필요), 기간 모호 문항의 채점 기준 확정(에이전트 손실의 40% 이상이 여기서 나옴).
 
 **평가셋 결함 상태 (질문 문구를 바꾸면 RunPod에서 질의 임베딩 재계산 필요, 약 $2)**
