@@ -35,6 +35,10 @@ anonymized and judged blind with one rubric. The headline number is the mean ove
   is tool choice: agents sometimes skip the vision tool, or run it and never open the page it found.
 - **On charts, neither agent beats vision alone** (6-7): single-shot vision already reaches R@5 0.97 there.
 - **Korean costs the text path 12 points** and the vision path 4.
+- **The agent-over-vision margin depends on how open-period questions are scored.** Ten questions name no period.
+  Re-judging their 230 answers under an explicit rule (one correctly labelled period counts as correct) keeps the
+  ranking (E4b 0.93, E4 0.90, vision 0.82, hybrid 0.81, text 0.64) but E4b vs vision is no longer significant
+  (28-15, p=0.07). Vision scores lowest on those questions (0.72): it tends to retrieve the prior-year twin page.
 - **Answers are faithful to the pages they saw**: on a blind 95-answer sample, zero claims contradicted the evidence
   pages and only one answer had an unsupported claim. Every wrong answer in that sample was faithful to a page that
   did not hold what the question asked, so the remaining errors are retrieval and period selection, not hallucination.
