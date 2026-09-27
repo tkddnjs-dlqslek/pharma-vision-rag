@@ -119,8 +119,11 @@ RunPod(RTX 4090, 1시간 이내, 약 $1)에서 한 번에 생성. 형식별 비�
 - 로컬 pooled_int8 실측(`scripts/25_check_vision_index.py`): R@5 0.858, 기준 순위와 top-5 일치 0.812, **질의당 8.9초(CPU)**.
   fp16에서 병합한 pod 산출물(0.867)보다 0.009 낮음. 양자화가 한 번 더 들어간 대가. 문서 필터를 주면 0.2초로 떨어짐.
 - MCP 서버는 `data/embeddings/vision_index_pooled`를 기본으로 씀(`PHARMA_VISION_INDEX`로 변경 가능).
-- **질의 인코더는 아직 없음**: 새 질문을 벡터로 바꾸려면 Nemotron 3B가 필요한데 개발 PC 여유 RAM으로는 안 됨.
-  RunPod Serverless(`serverless/`)를 배포하거나 `PHARMA_VISION_LOCAL_ENCODER=1`로 로컬 로드. 미배포 상태.
+- **질의 인코더(2026-09-28, Modal CPU 컨테이너, 카드 없이 무료 크레딧 안)**: `serverless/modal_app.py`를 `MODAL_GPU=none`으로 배포.
+  GPU 함수는 결제 수단이 필요해 CPU 8코어, RAM 24GB 컨테이너로 돌림. 실측: 콜드 스타트 포함 첫 호출 40초(가중치 로드 8초), 이후 질의당 2~4초.
+  벤치마크 질의로 대조하면 GPU 임베딩과 토큰 코사인 0.9999, 상위 페이지 집합 동일. MCP `search_pages`로 새 한국어 질문을 넣어 끝까지 동작 확인
+  (첫 호출 29초, 문서 필터 시 1.7초). 인코더 선택은 `VISION_ENCODER=auto|runpod|modal|none`. 로컬 3B 로드(`PHARMA_VISION_LOCAL_ENCODER=1`)는 RAM 7GB가 필요해 미사용.
+  겪은 문제: transformers 4.57은 `device_map`이 있으면 CUDA 할당기를 예열하고, 컨테이너는 배포 PC의 환경 변수를 물려받지 않음(`MODAL_GPU`를 이미지 env로 전달해 해결).
 - **CPU 검색 속도 개선(2026-09-27)**: 질의당 8.9초에서 **3.4초**(중앙값, 120질의 동일 top-5). 문서 필터 시 0.24초에서 0.09초.
   바꾼 것: 패딩된 0 토큰 제거(정확한 연산, GEMM 절반), 인덱스 3GB 이하면 mmap 대신 RAM 상주, int8에서 float32 변환을 torch `copy_`로
   멀티스레드화(5.1초에서 1.1초), 청크 16k행. 남은 2.1초는 fp32 GEMM 자체(이 CPU에서 55~90 GFLOPS)라 정확도를 포기하지 않는 한 더 줄이기 어려움.

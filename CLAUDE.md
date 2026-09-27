@@ -70,8 +70,8 @@ API 키와 크레딧이 없어서 **답변 생성과 채점은 Anthropic API 대
    텍스트 도구는 동작 확인, 비전 검색은 인덱스 연결까지 끝남. RunPod RTX 4090에서 `24_vision_index_gpu.py --embed-now`로 1시간 이내 생성(약 $1).
    int8(9.5GB)을 받아 `scripts/26_pool_local_index.py`로 로컬에서 pooled_int8(2.4GB)로 줄임(12분, GPU 불필요).
    MCP 기본 인덱스는 `data/embeddings/vision_index_pooled`(`PHARMA_VISION_INDEX`로 변경). 수치와 형식 비교표는 계획서 0절 "로컬 비전 인덱스".
-   **미완: 질의 인코더.** 새 질문을 벡터로 바꾸려면 `serverless/`(RunPod Serverless) 배포와 `.env`의 `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID`가 필요함.
-   없으면 MCP가 "인코더 없음"으로 안내하고 텍스트 검색으로 유도함(`PHARMA_VISION_LOCAL_ENCODER=1`이면 로컬 3B 로드, RAM 약 7GB 필요).
+   **질의 인코더는 Modal에 배포됨(2026-09-28, `serverless/modal_app.py`, CPU 전용 무료 크레딧).** `~/.modal.toml` 토큰만 있으면 MCP가 자동 선택
+   (`VISION_ENCODER=auto|runpod|modal|none`). 콜드 40초, 이후 2~4초. 재배포: `MODAL_GPU=none modal deploy serverless/modal_app.py`. RunPod 경로는 미배포 대안.
    RunPod 교훈: 익명 HF 요청은 429(`export HF_HUB_OFFLINE=1`), 모델 원격 코드가 `datasets`를 요구함, Container Disk는 캐시 밖 읽기가 느림(Volume Disk를 쓸 것).
 12. **[완료 2026-09-23] RAG 검증 보강.** `scripts/27_faithfulness.py`. 근거성 표본 95건 blind 채점(모순 0건, 근거 없는 주장 1건),
    인용 정확도는 전 방식 전 회차(텍스트 0.73, 비전 0.77~0.79, 에이전트 0.86~0.93). 표본의 오답은 전부 "근거는 맞고 답이 틀린" 경우였음. 상세는 계획서 0절.
@@ -79,8 +79,8 @@ API 키와 크레딧이 없어서 **답변 생성과 채점은 Anthropic API 대
    렌더 확인 후 반영), `22_blind_rejudge.py prepare --round r5`(기간 모호 10문항 230답변을 규칙 B로 재채점. E4b 대 vision이 p=0.066으로
    유의하지 않게 됨. 대표 수치는 규칙 A 유지, B는 병기), `vision_local.py` 검색 8.9초에서 3.4초. 상세는 계획서 0절.
    문구를 바꿔야 하는 문항(D03, A07, A16, A01)은 `pending_q_ko/pending_q_en`에 보관, 재임베딩 때 적용.
-14. **남은 선택 과제**: Serverless 인코더 배포(사용자 준비 후 Chrome으로 진행), 보류된 문구 수정 적용과 질의 재임베딩,
-   실제 API 경로 파일럿(키 필요).
+14. **남은 선택 과제**: 보류된 문구 수정 4건 적용과 질의 재임베딩(비전은 Modal 인코더로 가능, 텍스트는 BGE-M3 로컬 또는 GPU 필요),
+   실제 API 경로 파일럿(키 필요), Claude Desktop에 MCP 등록해 실사용 확인.
 
 **평가셋 결함 상태 (질문 문구를 바꾸면 RunPod에서 질의 임베딩 재계산 필요, 약 $2)**
 - A02, A01, B08: 해결(렌더로 확인해 gold와 기준 정답 반영). D03: 질문에 회사 이름이 없음(v1 잔재), 미해결.

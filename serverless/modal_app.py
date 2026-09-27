@@ -28,7 +28,9 @@ image = (
     modal.Image.from_registry("pytorch/pytorch:2.8.0-cuda12.6-cudnn9-runtime", add_python=None)
     .pip_install("transformers>=4.45,<5", "accelerate", "einops", "sentencepiece", "datasets", "Pillow",
                  "huggingface_hub", "hf_transfer", "numpy<3")
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_HOME": "/hf"})
+    # MODAL_GPU is forwarded so the container computes the same CPU_ONLY as the deploying machine
+    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_HOME": "/hf", "MODAL_GPU": GPU,
+          **({"CUDA_VISIBLE_DEVICES": ""} if CPU_ONLY else {})})
 )
 weights = modal.Volume.from_name("pharma-nemotron-hf", create_if_missing=True)
 app = modal.App(APP_NAME)
@@ -55,9 +57,11 @@ class Encoder:
     def load(self):
         import torch
         from transformers import AutoModel
-        device = "cpu" if CPU_ONLY else "cuda"
-        self.model = AutoModel.from_pretrained(MODEL_ID, device_map=device, trust_remote_code=True,
-                                               torch_dtype=torch.bfloat16).eval()
+        if CPU_ONLY:  # transformers 4.57 resolved the device to cuda on a CPU box and died warming its allocator
+            torch.set_default_device("cpu")
+        where = {"device_map": {"": "cpu"} if CPU_ONLY else "cuda"}
+        self.model = AutoModel.from_pretrained(MODEL_ID, trust_remote_code=True, torch_dtype=torch.bfloat16,
+                                               **where).eval()
         floats = (torch.float32, torch.float16, torch.bfloat16, torch.float64)
         for t in list(self.model.parameters()) + list(self.model.buffers()):
             if t.dtype in floats:  # internal ViT is fp32-pinned

@@ -154,6 +154,29 @@ Claude Code equivalent:
 claude mcp add pharma-corpus --env PYTHONIOENCODING=utf-8 -- C:\Users\user\Desktop\pharma-vision-rag\.venv\Scripts\python.exe C:\Users\user\Desktop\pharma-vision-rag\src\pharma_vision_rag\mcp_server.py
 ```
 
+### Vision search for new questions
+
+`search_pages` needs two things: the page index and a query encoder.
+
+1. **Page index**: built once on a GPU box by `scripts/24_vision_index_gpu.py --embed-now` (about an hour on a
+   RunPod RTX 4090, roughly $1), downloaded into `data/embeddings/vision_index/`, then shrunk on the dev box with
+   `scripts/26_pool_local_index.py` to the 2.4 GB `vision_index_pooled/` the server uses by default
+   (`PHARMA_VISION_INDEX` overrides). A full scan takes about 3.4 s on a laptop CPU, 0.1 s with a document filter.
+2. **Query encoder**: the same Nemotron 3B model must embed the question. The dev box cannot hold it, so it runs
+   remotely. Cheapest path, no card required:
+
+   ```bash
+   pip install modal && modal token new                      # once, browser login
+   MODAL_GPU=none modal deploy serverless/modal_app.py       # CPU container inside Modal's free credits
+   MODAL_GPU=none modal run serverless/modal_app.py          # smoke test: prints the embedding shape and time
+   ```
+
+   The MCP server picks the Modal encoder automatically when `~/.modal.toml` exists (`VISION_ENCODER=modal|runpod|none`
+   forces it). A cold start loads the 7 GB weights from a Modal Volume (about a minute or two); after that a query takes
+   seconds, and the container scales to zero when idle. With a payment method on file, `modal deploy` without
+   `MODAL_GPU=none` puts it on an L4 instead. `serverless/handler.py` + `Dockerfile` are the RunPod Serverless
+   equivalent (`RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID`).
+
 ## License
 
 This project's own code, question set and evaluation scripts are **MIT-licensed**.
