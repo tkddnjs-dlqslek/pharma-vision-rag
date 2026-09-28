@@ -83,7 +83,7 @@ API 키와 크레딧이 없어서 **답변 생성과 채점은 Anthropic API 대
    BGE-M3와 리랭커)로 재계산해 `vision_rankings.json`, `text_candidates.json`, `text_reranked.json`을 갱신. 검색 지표는 0.01 이내 변동.
    생성 단계 점수는 이전 문구 기준(계획서 0절에 기록). D03 회사명 결함 해소.
 15. **[2026-09-28] 서비스화.** (a) 원격 MCP: `serverless/modal_mcp.py`가 같은 서버를 Modal CPU 컨테이너에서 HTTP로 서빙
-   (URL과 토큰은 `.env`의 `MCP_URL`, `MCP_TOKEN`; 데이터는 Modal Volume `pharma-corpus-data`). claude.ai 웹 커넥터는 OAuth만 받아서 OAuth 로그인 추가 중.
+   (URL과 토큰은 `.env`의 `MCP_URL`, `MCP_TOKEN`; 데이터는 Modal Volume `pharma-corpus-data`). claude.ai 웹 커넥터용 OAuth 2.1 로그인 포함(`MCP_USER`, `MCP_PASSWORD`, Modal Dict `pharma-mcp-auth`). 정적 토큰도 계속 유효.
    (b) dense 텍스트 검색: `retriever/text_cloud.py` + `scripts/29_upload_text_vectors.py`. Qdrant Cloud 무료 티어에 15,182 벡터 업로드 완료,
    `search_text`가 BGE-M3 + 리랭커(Modal)로 동작하고 실패 시 BM25로 강등. 키는 `.env`의 `QDRANT_CLOUD_URL`, `QDRANT_CLOUD_API_KEY`
    (**키가 채팅에 노출된 적 있어 교체 권장**). (c) `docs/USE_CASES.md` 사용자별 예시 질문. 상세는 계획서 0절 "MCP 서비스 구성".
