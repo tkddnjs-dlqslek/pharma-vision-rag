@@ -125,4 +125,7 @@ def modal_query_encoder(app: str = MODAL_APP, cls: str = MODAL_CLASS, lookup=Non
 
 
 def modal_token_present() -> bool:
-    return bool(os.environ.get("MODAL_TOKEN_ID")) or (Path.home() / ".modal.toml").exists()
+    """A Modal token is usable: MODAL_TOKEN_ID, ~/.modal.toml, or we run inside a Modal container
+    (MODAL_IS_REMOTE=1, the flag modal.config checks; the SDK is authenticated implicitly there)."""
+    return (bool(os.environ.get("MODAL_TOKEN_ID")) or os.environ.get("MODAL_IS_REMOTE") == "1"
+            or (Path.home() / ".modal.toml").exists())

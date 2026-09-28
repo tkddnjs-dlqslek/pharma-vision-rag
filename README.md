@@ -157,9 +157,9 @@ claude mcp add pharma-corpus --env PYTHONIOENCODING=utf-8 -- C:\Users\user\Deskt
 ### Remote (claude.ai web, any MCP client)
 
 `serverless/modal_mcp.py` serves the same `MCPServer` over streamable HTTP on Modal (CPU, scales to zero, no card
-needed), behind a static bearer token. The corpus, `text_chunks.jsonl` and the 2.4 GB pooled vision index live in the
+needed), behind OAuth (claude.ai, Claude Desktop) or a static bearer token (Claude Code). The corpus, `text_chunks.jsonl` and the 2.4 GB pooled vision index live in the
 Modal Volume `pharma-corpus-data` at their repo-relative paths; `search_pages` calls the deployed `pharma-vision-encoder`
-app from inside Modal, so nothing runs on your machine.
+app and `search_text` the `pharma-text-models` app plus Qdrant Cloud from inside Modal, so nothing runs on your machine.
 
 ```bash
 modal volume create pharma-corpus-data
@@ -167,7 +167,9 @@ modal volume put pharma-corpus-data data/pdf/corpus /data/pdf/corpus            
 modal volume put pharma-corpus-data eval/corpus.json /eval/corpus.json
 modal volume put pharma-corpus-data data/embeddings/v2/text/text_chunks.jsonl /data/embeddings/v2/text/text_chunks.jsonl
 modal volume put pharma-corpus-data data/embeddings/vision_index_pooled /data/embeddings/vision_index_pooled
-modal secret create pharma-mcp-token MCP_TOKEN=$(python -c "import secrets; print(secrets.token_hex(16))")
+# one secret with MCP_TOKEN (secrets.token_hex(16)), MCP_USER, MCP_PASSWORD (secrets.token_urlsafe(16)),
+# QDRANT_CLOUD_URL, QDRANT_CLOUD_API_KEY; keep the same values in .env
+modal secret create pharma-mcp-token --from-dotenv <file-with-those-five-lines> --force
 modal deploy serverless/modal_mcp.py       # prints https://<workspace>--pharma-mcp-web.modal.run
 ```
 
@@ -185,11 +187,24 @@ claude mcp add --transport http pharma-corpus-remote https://tkddnjs-dlqslek--ph
   --header "Authorization: Bearer <token>"
 ```
 
-Claude Desktop and claude.ai web: Settings > Connectors > Add custom connector, paste the URL. The dialog's
-"Advanced settings" only take an OAuth client id and secret (per the support article at the time of writing), so a
-static bearer token cannot be entered there and the connection is refused with 401. To use it from claude.ai you
-would have to put an OAuth layer in front (e.g. the SDK's `token_verifier`) or drop the token check and rely on the
-unguessable URL. Not verified here: whether the connector UI has since gained a header/API-key field.
+**claude.ai web and Claude Desktop** (custom connectors speak OAuth only, so the Modal app is also a small OAuth 2.1
+authorization server: `/.well-known/oauth-authorization-server`, `/register`, `/authorize`, `/token`, and a `/login`
+form; tokens and codes live in the Modal Dict `pharma-mcp-auth`):
+
+1. claude.ai > Settings > Connectors > Add custom connector. Name: `pharma-corpus`. Remote MCP server URL:
+   `https://tkddnjs-dlqslek--pharma-mcp-web.modal.run/mcp`. Leave Advanced settings (OAuth client id/secret) empty:
+   the connector registers itself (dynamic client registration). Click Add.
+2. Click Connect. A browser tab opens the server's login page: enter `MCP_USER` and `MCP_PASSWORD` from `.env`
+   (the same values are in the Modal secret `pharma-mcp-token`). You are sent back to claude.ai with the connector
+   enabled. The access token lasts 30 days, the refresh token 90; a Dict entry unused for 7 days expires (Modal's
+   rule), after which the connector asks you to log in again.
+3. Claude Desktop shows the same connector list (Settings > Connectors), so it needs no separate setup.
+
+Verified with the `mcp` SDK's own OAuth client (`OAuthClientProvider`: metadata discovery, `/register`, PKCE
+`/authorize`, the login form with a wrong then the right password, `/token`, then `list_tools` and `search_text`
+with the issued token; refresh and revocation are covered by `tests/test_modal_mcp.py`). Not verified: the claude.ai
+connector UI itself (it cannot be driven from here); it uses the same standard flow, but if it refuses, check the
+Modal app logs (`modal app logs pharma-mcp`) for the request that failed.
 
 ### Vision search for new questions
 
