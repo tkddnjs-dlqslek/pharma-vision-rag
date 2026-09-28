@@ -115,7 +115,8 @@ def test_remote_encoder_errors():
 
 
 def test_encoder_from_env():
-    with mock.patch.object(vr, "ROOT", ROOT / "does-not-exist"):  # keep the real .env out of it
+    with mock.patch.object(vr, "ROOT", ROOT / "does-not-exist"), \
+            mock.patch.object(vr, "modal_token_present", return_value=False):  # keep the real .env and ~/.modal.toml out of it
         with mock.patch.dict(vr.os.environ, {"RUNPOD_API_KEY": "", "RUNPOD_ENDPOINT_ID": "ep"}):
             assert vr.encoder_from_env() is None
         with mock.patch.dict(vr.os.environ, {"RUNPOD_API_KEY": "k", "RUNPOD_ENDPOINT_ID": "ep"}):

@@ -154,6 +154,43 @@ Claude Code equivalent:
 claude mcp add pharma-corpus --env PYTHONIOENCODING=utf-8 -- C:\Users\user\Desktop\pharma-vision-rag\.venv\Scripts\python.exe C:\Users\user\Desktop\pharma-vision-rag\src\pharma_vision_rag\mcp_server.py
 ```
 
+### Remote (claude.ai web, any MCP client)
+
+`serverless/modal_mcp.py` serves the same `MCPServer` over streamable HTTP on Modal (CPU, scales to zero, no card
+needed), behind a static bearer token. The corpus, `text_chunks.jsonl` and the 2.4 GB pooled vision index live in the
+Modal Volume `pharma-corpus-data` at their repo-relative paths; `search_pages` calls the deployed `pharma-vision-encoder`
+app from inside Modal, so nothing runs on your machine.
+
+```bash
+modal volume create pharma-corpus-data
+modal volume put pharma-corpus-data data/pdf/corpus /data/pdf/corpus              # Git Bash: MSYS_NO_PATHCONV=1
+modal volume put pharma-corpus-data eval/corpus.json /eval/corpus.json
+modal volume put pharma-corpus-data data/embeddings/v2/text/text_chunks.jsonl /data/embeddings/v2/text/text_chunks.jsonl
+modal volume put pharma-corpus-data data/embeddings/vision_index_pooled /data/embeddings/vision_index_pooled
+modal secret create pharma-mcp-token MCP_TOKEN=$(python -c "import secrets; print(secrets.token_hex(16))")
+modal deploy serverless/modal_mcp.py       # prints https://<workspace>--pharma-mcp-web.modal.run
+```
+
+The MCP endpoint is `<that URL>/mcp`; put it in `.env` as `MCP_URL` and the token as `MCP_TOKEN`, then
+`python serverless/modal_mcp.py` runs a smoke test (initialize, list tools, one call per tool, timings). A request
+without `Authorization: Bearer <token>` gets 401. Measured from the dev box (2026-09-28): cold `initialize` 8 s
+(container start, BM25 index, 2.4 GB vision index read from the volume), warm 1 s; `search_text` 0.5 s; `open_page`
+1.4~2 s; `search_pages` 26 s when the encoder app is cold, 3.2 s warm. The container stays warm 5 minutes.
+
+Register it:
+
+```bash
+# Claude Code
+claude mcp add --transport http pharma-corpus-remote https://tkddnjs-dlqslek--pharma-mcp-web.modal.run/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+Claude Desktop and claude.ai web: Settings > Connectors > Add custom connector, paste the URL. The dialog's
+"Advanced settings" only take an OAuth client id and secret (per the support article at the time of writing), so a
+static bearer token cannot be entered there and the connection is refused with 401. To use it from claude.ai you
+would have to put an OAuth layer in front (e.g. the SDK's `token_verifier`) or drop the token check and rely on the
+unguessable URL. Not verified here: whether the connector UI has since gained a header/API-key field.
+
 ### Vision search for new questions
 
 `search_pages` needs two things: the page index and a query encoder.
