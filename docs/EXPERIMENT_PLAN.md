@@ -111,6 +111,19 @@ runner 재실행 결과(R@5): text 0.69, text_rerank 0.72, vision 0.88, hybrid 0
 D03은 회사명을 넣은 뒤 text_rerank가 영어에서 1위로 gold를 찾음(한국어는 여전히 실패). **생성 단계 점수(0절 표)는 이전 문구로 만든 답변의 채점이므로,
 이 4문항에 한해 문구와 점수의 기준이 어긋남**. 재생성하지 않고 이 사실만 기록함.
 
+**MCP 서비스 구성 (2026-09-28)**: 벤치마크 결과를 실제로 쓸 수 있는 형태로 옮김. 전부 무료 티어.
+
+| 구성 요소 | 위치 | 역할 |
+|---|---|---|
+| MCP 서버 `mcp_server.py` | 로컬(stdio) 또는 Modal CPU 컨테이너(HTTP, `serverless/modal_mcp.py`) | 도구 5개. 호스트 LLM(Claude)이 에이전트 역할(E4b 구성) |
+| 텍스트 검색 | Qdrant Cloud 무료 1GB(`pharma_text_v2`, 15,182 × 1024) + Modal `pharma-text-models`(BGE-M3 질의 임베딩, bge-reranker) | 벤치마크 text_rerank 경로 그대로(R@5 0.72). 미설정 시 BM25(0.53)로 자동 강등 |
+| 비전 검색 | 로컬 또는 Modal Volume의 pooled_int8 인덱스(2.4GB) + Modal `pharma-vision-encoder` | 벤치마크 vision 경로(로컬 압축본 R@5 0.858) |
+| 페이지 열기 | PDF 렌더(pypdfium2) | Claude가 이미지를 직접 읽음 |
+
+실측(개발 PC에서 Modal과 Qdrant 왕복 포함): dense 텍스트 검색 콜드 57초, 이후 5~8초(리랭커 4.5초가 대부분). 비전 검색 콜드 45초, 이후 3~4초.
+Qdrant 업로드는 배치 256이 São Paulo 리전으로 쓰기 타임아웃이 나서 64로 낮춤(224초). 벡터 DB를 텍스트 경로에만 쓰는 이유: 비전 멀티벡터 2.4GB는
+무료 티어에 안 들어가고, 정확 MaxSim이 3초면 충분함.
+
 **로컬 비전 인덱스 (2026-09-24, 실측)**
 
 RunPod(RTX 4090, 1시간 이내, 약 $1)에서 한 번에 생성. 형식별 비교는 GPU에서 120질의로 채점함.

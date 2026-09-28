@@ -82,7 +82,12 @@ API 키와 크레딧이 없어서 **답변 생성과 채점은 Anthropic API 대
 14. **[완료 2026-09-28] 보류 문구 4건 적용.** `scripts/28_apply_pending_questions.py`가 바뀐 질의 6건만 Modal(비전 인코더, `serverless/modal_text.py`의
    BGE-M3와 리랭커)로 재계산해 `vision_rankings.json`, `text_candidates.json`, `text_reranked.json`을 갱신. 검색 지표는 0.01 이내 변동.
    생성 단계 점수는 이전 문구 기준(계획서 0절에 기록). D03 회사명 결함 해소.
-15. **남은 선택 과제**: 실제 API 경로 파일럿(키 필요), Claude Desktop에 MCP 등록해 실사용 확인, 문구 바뀐 4문항의 답변 재생성(선택).
+15. **[2026-09-28] 서비스화.** (a) 원격 MCP: `serverless/modal_mcp.py`가 같은 서버를 Modal CPU 컨테이너에서 HTTP로 서빙
+   (URL과 토큰은 `.env`의 `MCP_URL`, `MCP_TOKEN`; 데이터는 Modal Volume `pharma-corpus-data`). claude.ai 웹 커넥터는 OAuth만 받아서 OAuth 로그인 추가 중.
+   (b) dense 텍스트 검색: `retriever/text_cloud.py` + `scripts/29_upload_text_vectors.py`. Qdrant Cloud 무료 티어에 15,182 벡터 업로드 완료,
+   `search_text`가 BGE-M3 + 리랭커(Modal)로 동작하고 실패 시 BM25로 강등. 키는 `.env`의 `QDRANT_CLOUD_URL`, `QDRANT_CLOUD_API_KEY`
+   (**키가 채팅에 노출된 적 있어 교체 권장**). (c) `docs/USE_CASES.md` 사용자별 예시 질문. 상세는 계획서 0절 "MCP 서비스 구성".
+16. **남은 선택 과제**: 실제 API 경로 파일럿(키 필요), 문구 바뀐 4문항의 답변 재생성(선택), Claude Desktop과 웹에서 실사용 확인.
 
 **평가셋 결함 상태 (질문 문구를 바꾸면 RunPod에서 질의 임베딩 재계산 필요, 약 $2)**
 - A02, A01, B08: 해결(렌더로 확인해 gold와 기준 정답 반영). D03: 2026-09-28 회사명 추가로 해결(28번 스크립트).

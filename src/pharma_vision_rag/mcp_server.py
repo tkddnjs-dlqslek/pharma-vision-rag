@@ -27,6 +27,15 @@ sys.path.insert(0, str(ROOT / "src"))
 from mcp.server.mcpserver import Image, MCPServer  # noqa: E402  (mcp 2.x; FastMCP was renamed MCPServer)
 from mcp.server.mcpserver.exceptions import ToolError  # noqa: E402
 
+import logging  # noqa: E402
+
+# stdout is the MCP transport in stdio mode: every library log line must go to stderr, and the per-request
+# httpx/qdrant INFO lines are noise there too.
+logging.basicConfig(stream=sys.stderr, level=logging.WARNING, force=True)
+for _name in ("httpx", "httpcore", "qdrant_client", "modal"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
+
+from pharma_vision_rag.retriever import text_cloud as tc  # noqa: E402  (qdrant-client + stdlib; Modal looked up lazily)
 from pharma_vision_rag.retriever.vision_remote import RemoteEncoderError, encoder_from_env  # noqa: E402  (numpy + stdlib only)
 
 # PHARMA_VISION_INDEX overrides; the pooled index is a quarter the size and about 4x faster per query on CPU
@@ -61,6 +70,9 @@ def _load_agentic():
 # client is never touched by the tool bodies; a placeholder avoids needing an API key.
 _mode = _load_agentic().AgenticMode(client=object())
 _vision = None  # lazy LocalVisionIndex
+# Dense text search (BGE-M3 + bge-reranker on Modal, vectors in Qdrant Cloud) when QDRANT_CLOUD_* and a Modal token
+# exist; that is the benchmark's text_rerank arm (R@5 0.72). Without them search_text is BM25 only (0.53).
+_dense = tc.CloudTextSearch() if tc.available() else None
 
 mcp = MCPServer("pharma-corpus", instructions=INSTRUCTIONS)
 
@@ -78,12 +90,20 @@ def list_documents() -> str:
     return _content(_mode._tool_list_documents())
 
 
-@mcp.tool(description=f"""Lexical (BM25) search over the parsed text and table chunks of the corpus. {CORPUS_NOTE}
-Use English keywords (product names, metric names such as "net sales", "business EPS", periods such as "Q2 2025").
+@mcp.tool(description=f"""Text search over the parsed text and table chunks of the corpus: dense retrieval (BGE-M3)
+re-ranked by a cross-encoder when the vector index is configured, otherwise lexical BM25. {CORPUS_NOTE}
+Phrase the query in English (product names, metric names such as "net sales", "business EPS", periods such as "Q2 2025").
 Returns up to k passages (400 chars each) with document id, page and score. Pass document_ids from list_documents to
-restrict the search. Text extraction misses numbers drawn inside charts, so open_page the hit to verify figures.""")
+restrict the search: the ranker does not know which period you mean, so filter by document when the period matters.
+Text extraction misses numbers drawn inside charts, so open_page the hit to verify figures.""")
 def search_text(query: str, document_ids: list[str] | None = None, k: int = 5) -> str:
-    return _content(_mode._tool_search_text(query, document_ids or None, max(1, min(int(k), 20))))
+    k = max(1, min(int(k), 20))
+    if _dense is not None:
+        try:
+            return json.dumps(_dense.search(query, k=k, document_ids=document_ids or None), ensure_ascii=False)
+        except tc.CloudTextError as e:  # vector index or Modal unavailable: degrade to BM25 rather than fail
+            print(f"search_text: dense path failed ({e}); using BM25", file=sys.stderr)
+    return _content(_mode._tool_search_text(query, document_ids or None, k))
 
 
 @mcp.tool(description=f"""Visual page search: ranks whole page images against the query with a vision embedding
