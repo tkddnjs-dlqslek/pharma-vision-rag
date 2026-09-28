@@ -41,6 +41,9 @@ CORPUS_NOTE = (
 )
 
 INSTRUCTIONS = f"""{CORPUS_NOTE}
+Before searching, restate the question as company + metric + period + basis (reported or CER, quarter or year).
+If the company or the period is missing or could mean several things, ask the user to confirm your reading first;
+the benchmark's biggest error source was answering an underspecified question with the wrong year or company.
 Workflow: list_documents to pick document ids for the named company and period, search_text (and search_pages
 for chart-heavy slides) to find candidate pages, then open_page to read and verify every figure before answering.
 Use calculate for any change, ratio or percentage. Quote figures with unit and period, cite document id and page
