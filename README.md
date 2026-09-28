@@ -8,6 +8,12 @@
 
 ---
 
+## Architecture
+
+![Service architecture](docs/architecture.svg)
+
+The host LLM (claude.ai web, Claude Desktop or Claude Code) is the agent; the MCP server on Modal supplies text search (Qdrant Cloud + BGE-M3 + reranker), vision page search (Nemotron ColEmbed over a pooled int8 index) and page rendering. Every runtime component sits on a free tier; only the one-off index build ran on a paid GPU (about $1).
+
 ## Results in one table
 
 120 queries (60 questions x KO/EN), answer accuracy with correct = 1, partial = 0.5. Every answer was generated
