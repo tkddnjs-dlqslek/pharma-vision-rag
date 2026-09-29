@@ -93,6 +93,32 @@ unit-tested with a fake client, but **have not been run against the live API**.
   rendering; multi-hop questions use `gold_groups` (one group per hop).
 - PDFs are not redistributed (`data/pdf/` is gitignored).
 
+## What this means in practice
+
+Recommendations for a production document-QA system, each tied to a number from this benchmark.
+
+1. **Index chart-heavy documents with a vision retriever.** Chart questions: vision R@5 0.97 vs 0.72 for the best
+   text pipeline, and no chunking rule, reranker or BM25 fusion closed that gap. Text layers of slides simply do not
+   carry the numbers drawn in the charts.
+2. **Do not route per query; fuse or split by document type.** A keyword router (our `hybrid`) did not beat vision
+   alone (p=0.75). Always-on RRF fusion matched vision at the retrieval stage (R@5 0.89 vs 0.88), so the safe
+   design is "search both, fuse", or decide at index time by document type (decks and scans to vision, long prose
+   to text).
+3. **Give the agent to multi-hop questions only.** Agents never lost a multi-hop cell to any fixed pipeline
+   (0-14 to 0-18) but bought nothing on charts (6-7 vs vision) and were noisier run to run (cell agreement 0.79-0.83 vs
+   0.89-0.94). Tool choice by the model is the main source of that noise.
+4. **Confirm company and period before searching.** Open-period questions caused 40% or more of the agents' lost
+   points and the prior-year "twin page" errors for vision. A one-line restatement ("Sanofi, Q3 2025, CER?") is
+   cheaper than any retrieval improvement; the MCP server instructs the model to do this.
+5. **Verify on the page image, cite the page.** Answers were faithful to the pages they saw (0 contradictions in 95
+   sampled answers); the remaining errors were retrieval and period selection. Returning the page image to the
+   model and requiring a citation is what makes the answer checkable by a reader.
+6. **Vector DB for text, flat MaxSim for vision.** 15k text vectors fit a free Qdrant cluster; 770k pooled int8
+   page vectors do not, and an exact scan over them takes about 3 s on a CPU, so the vision index stays a file.
+7. **Measure with repeats and blind judges.** The first single run said "the agent beats vision" (p=0.03); three
+   runs, a blind judge pool with anchors, and an explicit rule for open-period questions reduced that to "not
+   significant" (p=0.07). Any agent comparison needs repeated runs and a fixed rubric before it is a result.
+
 ## Known limitations
 
 - Two generation runs per fixed arm, three per agent. Enough to show the agents are noisy (one agent's runs span
