@@ -1,0 +1,6 @@
+# Build context for services/mcp/Dockerfile is the repo root: keep the multi-GB data and the venv out of it.
+*
+!src
+!services
+**/__pycache__
+**/*.pyc

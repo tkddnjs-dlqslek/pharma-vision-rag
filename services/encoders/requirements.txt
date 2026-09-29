@@ -1,0 +1,13 @@
+# CPU torch comes from the PyTorch index (see Dockerfile); everything else from PyPI.
+transformers>=4.45,<5
+sentence-transformers>=3,<6
+accelerate
+datasets
+einops
+sentencepiece
+Pillow
+huggingface_hub
+hf_transfer
+numpy<3
+fastapi
+uvicorn[standard]

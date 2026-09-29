@@ -120,13 +120,14 @@ def search_pages(query: str, document_ids: list[str] | None = None, k: int = 5) 
         if not LocalVisionIndex.available(VISION_INDEX_DIR):
             raise ToolError(f"Vision page search is not installed (no index at {VISION_INDEX_DIR}). "
                             "Use search_text instead.")
-        # RunPod query encoder when RUNPOD_API_KEY/RUNPOD_ENDPOINT_ID are set. The local fallback loads the 3B
-        # model (about 7 GB of RAM), so it needs PHARMA_VISION_LOCAL_ENCODER=1 rather than happening by surprise.
+        # Remote query encoder (RunPod keys, ENCODER_URL/ENCODER_TOKEN, or a Modal token). The local fallback loads
+        # the 3B model (about 7 GB of RAM), so it needs PHARMA_VISION_LOCAL_ENCODER=1 rather than happening by surprise.
         encoder = encoder_from_env()
         if encoder is None and os.environ.get("PHARMA_VISION_LOCAL_ENCODER") != "1":
-            raise ToolError("Vision page search has an index but no query encoder: set RUNPOD_API_KEY and "
-                            "RUNPOD_ENDPOINT_ID (serverless/README.md), or PHARMA_VISION_LOCAL_ENCODER=1 to load "
-                            "the 3B model locally (about 7 GB of RAM). Use search_text instead.")
+            raise ToolError("Vision page search has an index but no query encoder: set ENCODER_URL and ENCODER_TOKEN "
+                            "(services/deploy.md), RUNPOD_API_KEY and RUNPOD_ENDPOINT_ID (serverless/README.md), or "
+                            "PHARMA_VISION_LOCAL_ENCODER=1 to load the 3B model locally (about 7 GB of RAM). "
+                            "Use search_text instead.")
         _vision = LocalVisionIndex(VISION_INDEX_DIR, encoder=encoder)
     try:
         hits = _vision.search(query, k=max(1, min(int(k), 20)), document_ids=document_ids or None)

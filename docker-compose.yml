@@ -20,6 +20,52 @@ services:
       # multi-vector upserts instead; REST is fine for small queries.
       # QDRANT__SERVICE__API_KEY intentionally unset for local dev (no auth needed).
 
+  # ─── Self-hosted MCP service (services/deploy.md) ────────────────────────
+  # docker compose --profile serve up -d --build      (the profile keeps `docker compose up -d qdrant` unchanged)
+  # Values come from the repo-root .env (compose interpolation), so only the listed keys enter the containers.
+  encoders:
+    build: services/encoders
+    container_name: pharma-rag-encoders
+    profiles: [serve]
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    environment:
+      ENCODER_TOKEN: ${ENCODER_TOKEN:?set ENCODER_TOKEN in .env}
+      # the three models are public: no HF_TOKEN here (a placeholder token in .env would break the download)
+    volumes:
+      - hf_cache:/data          # 12 GB of weights, downloaded once
+    healthcheck:                # "ok" only after all three models are resident (several minutes on a cold volume)
+      test: ["CMD", "python", "-c", "import json,sys,urllib.request; sys.exit(json.load(urllib.request.urlopen('http://localhost:7860/health'))['status'] != 'ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30m
+
+  mcp:
+    build:
+      context: .                # src/ is copied in; .dockerignore keeps data/ and .venv out
+      dockerfile: services/mcp/Dockerfile
+    container_name: pharma-rag-mcp
+    profiles: [serve]
+    restart: unless-stopped
+    depends_on: [encoders]
+    ports:
+      - "8000:8000"
+    environment:
+      MCP_TOKEN: ${MCP_TOKEN:?set MCP_TOKEN in .env}
+      MCP_USER: ${MCP_USER:-}
+      MCP_PASSWORD: ${MCP_PASSWORD:-}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-http://localhost:8000}
+      ENCODER_URL: http://encoders:7860       # compose network, not the public address
+      ENCODER_TOKEN: ${ENCODER_TOKEN:?set ENCODER_TOKEN in .env}
+      QDRANT_CLOUD_URL: ${QDRANT_CLOUD_URL:-}
+      QDRANT_CLOUD_API_KEY: ${QDRANT_CLOUD_API_KEY:-}
+      DATA_REPO: ${DATA_REPO:-sangwongim922/pharma-corpus-data}
+      HF_TOKEN: ${HF_TOKEN:-}                 # only needed when DATA_REPO is private; must be a real token or empty
+    volumes:
+      - corpus_data:/data       # 2.5 GB corpus download + auth.json (OAuth clients and tokens)
+
   # ─── Langfuse (self-host, optional) ─────────────────────────────────────
   # Default path: use Langfuse Cloud (set LANGFUSE_BASE_URL in .env).
   # Uncomment below to self-host instead.
@@ -53,6 +99,8 @@ services:
 
 volumes:
   qdrant_storage:
+  hf_cache:
+  corpus_data:
 
 networks:
   default:

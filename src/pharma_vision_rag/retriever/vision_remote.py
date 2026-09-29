@@ -1,6 +1,8 @@
-"""Query encoder backed by the RunPod Serverless worker in serverless/handler.py (no local 3B model).
+"""Remote query encoders (no local 3B model): RunPod Serverless (serverless/handler.py), a plain HTTP service
+(services/encoders, self-hosted Docker) or a Modal class (serverless/modal_app.py).
 
     RUNPOD_API_KEY, RUNPOD_ENDPOINT_ID   in the environment or .env -> encoder_from_env() returns an encoder
+    ENCODER_URL, ENCODER_TOKEN           the HTTP service (POST <url>/vision/encode)
     LocalVisionIndex(dir, encoder=encoder_from_env())                -> same search, remote query embeddings
 
 /runsync waits a limited time; a cold start (model download or load) can outlast it, so an unfinished job is
@@ -21,7 +23,11 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
 API = "https://api.runpod.ai/v2"
 TIMEOUT_S = 120.0
+HTTP_TIMEOUT_S = 600.0   # services/encoders on a small CPU box: 30~60 s per encode, minutes while the models still load
 POLL_S = 2.0
+RUNPOD_HINTS = {401: " (check RUNPOD_API_KEY)", 403: " (check RUNPOD_API_KEY)", 404: " (check RUNPOD_ENDPOINT_ID)"}
+HTTP_HINTS = {401: " (check ENCODER_TOKEN)", 403: " (check ENCODER_TOKEN)", 404: " (check ENCODER_URL)",
+              503: " (models still loading; retry in a few minutes)"}
 
 
 class RemoteEncoderError(RuntimeError):
@@ -38,7 +44,9 @@ def decode_embedding(item: dict) -> np.ndarray:
     return a.astype(np.float32)
 
 
-def _call(url: str, api_key: str, body: dict | None, timeout: float) -> dict:
+def _call(url: str, api_key: str, body: dict | None, timeout: float, service: str = "RunPod endpoint",
+          hints: dict[int, str] = RUNPOD_HINTS):
+    """Bearer-authenticated JSON GET (body None) or POST; HTTP and network errors become RemoteEncoderError."""
     req = urllib.request.Request(url, data=None if body is None else json.dumps(body).encode("utf-8"),
                                  headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                                  method="GET" if body is None else "POST")
@@ -46,10 +54,9 @@ def _call(url: str, api_key: str, body: dict | None, timeout: float) -> dict:
         with urllib.request.urlopen(req, timeout=max(timeout, 1.0)) as r:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        hint = " (check RUNPOD_API_KEY)" if e.code in (401, 403) else " (check RUNPOD_ENDPOINT_ID)" if e.code == 404 else ""
-        raise RemoteEncoderError(f"RunPod endpoint returned HTTP {e.code}{hint}") from None
+        raise RemoteEncoderError(f"{service} returned HTTP {e.code}{hints.get(e.code, '')}") from None
     except (urllib.error.URLError, TimeoutError) as e:
-        raise RemoteEncoderError(f"RunPod endpoint unreachable or timed out: {e}") from None
+        raise RemoteEncoderError(f"{service} unreachable or timed out: {e}") from None
 
 
 def runpod_query_encoder(endpoint_id: str, api_key: str, timeout: float = TIMEOUT_S):
@@ -72,19 +79,43 @@ def runpod_query_encoder(endpoint_id: str, api_key: str, timeout: float = TIMEOU
     return encode
 
 
-def encoder_from_env():
-    """RunPod encoder when its keys are set, else the Modal encoder when a Modal token exists, else None.
+def http_encoder_target() -> tuple[str, str] | None:
+    """(ENCODER_URL, ENCODER_TOKEN) when both are set (the services/encoders service), else None."""
+    url, token = os.environ.get("ENCODER_URL", "").strip(), os.environ.get("ENCODER_TOKEN", "").strip()
+    return (url, token) if url and token else None
 
-    VISION_ENCODER=runpod|modal|none forces the choice (env wins over .env)."""
+
+def http_query_encoder(base_url: str, token: str, timeout: float = HTTP_TIMEOUT_S):
+    """Encoder backed by services/encoders (POST /vision/encode {"queries": [q]} -> [{shape, dtype, data}])."""
+    url = base_url.rstrip("/") + "/vision/encode"
+
+    def encode(query: str) -> np.ndarray:
+        items = _call(url, token, {"queries": [query]}, timeout, service="encoder service", hints=HTTP_HINTS)
+        if not isinstance(items, list) or not items:
+            raise RemoteEncoderError(f"encoder service returned no embedding: {str(items)[:200]}")
+        return decode_embedding(items[0])
+    return encode
+
+
+def encoder_from_env():
+    """RunPod encoder when its keys are set, else the HTTP service when ENCODER_URL/ENCODER_TOKEN are set, else the
+    Modal encoder when a Modal token exists, else None.
+
+    VISION_ENCODER=runpod|http|modal|none forces the choice (env wins over .env)."""
     try:
         from dotenv import load_dotenv
         load_dotenv(ROOT / ".env")
     except ImportError:
         pass
     key, endpoint = os.environ.get("RUNPOD_API_KEY", "").strip(), os.environ.get("RUNPOD_ENDPOINT_ID", "").strip()
-    choice = os.environ.get("VISION_ENCODER", "auto").strip().lower()  # auto | runpod | modal | none
+    choice = os.environ.get("VISION_ENCODER", "auto").strip().lower()  # auto | runpod | http | modal | none
     if choice == "runpod" or (choice == "auto" and key and endpoint):
         return runpod_query_encoder(endpoint, key)
+    http = http_encoder_target()
+    if choice == "http" or (choice == "auto" and http):
+        if http is None:
+            raise RemoteEncoderError("VISION_ENCODER=http needs ENCODER_URL and ENCODER_TOKEN")
+        return http_query_encoder(*http)
     if choice == "modal" or (choice == "auto" and modal_token_present()):
         return modal_query_encoder()
     return None

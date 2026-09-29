@@ -1,8 +1,10 @@
 """Dense text retrieval for the MCP server: BGE-M3 chunk vectors in Qdrant, query embedding and
-bge-reranker-v2-m3 on Modal (serverless/modal_text.py). Same recipe as the benchmark's best text arm
-(text_rerank, R@5 0.72) instead of BM25 alone (0.53). No model is loaded locally; no torch import.
+bge-reranker-v2-m3 on a remote service (services/encoders over HTTP, or Modal via serverless/modal_text.py).
+Same recipe as the benchmark's best text arm (text_rerank, R@5 0.72) instead of BM25 alone (0.53).
+No model is loaded locally; no torch import.
 
     QDRANT_CLOUD_URL, QDRANT_CLOUD_API_KEY   Qdrant Cloud (free tier). Absent -> QDRANT_URL (local docker).
+    ENCODER_URL, ENCODER_TOKEN               HTTP query-side models (POST /text/embed, /text/rerank); else
     ~/.modal.toml                            Modal token for the query-side models.
 
     scripts/29_upload_text_vectors.py        fills collection pharma_text_v2 from data/embeddings/v2/text/
@@ -45,12 +47,14 @@ def qdrant_target() -> tuple[str, str | None] | None:
     return (local, None) if local else None
 
 
-from pharma_vision_rag.retriever.vision_remote import modal_token_present  # noqa: E402  (also true inside Modal containers)
+from pharma_vision_rag.retriever.vision_remote import (  # noqa: E402  (stdlib + numpy only)
+    HTTP_HINTS, HTTP_TIMEOUT_S, RemoteEncoderError, _call, http_encoder_target, modal_token_present)
 
 
 def available() -> bool:
-    """A Qdrant target and a Modal token exist. Does not check that the collection was uploaded."""
-    return qdrant_target() is not None and modal_token_present()
+    """A Qdrant target and query-side models (HTTP service or Modal token) exist. Does not check that the
+    collection was uploaded."""
+    return qdrant_target() is not None and (http_encoder_target() is not None or modal_token_present())
 
 
 def client_from_env():
@@ -62,7 +66,36 @@ def client_from_env():
     return QdrantClient(url=url, api_key=key, timeout=300, check_compatibility=False)
 
 
-# ─── Modal query-side models ────────────────────────────────────────────────
+# ─── query-side models: HTTP service (services/encoders) or Modal ───────────
+
+def http_text_models(base_url: str, token: str, timeout: float = HTTP_TIMEOUT_S):
+    """(embed, rerank) callables over services/encoders: POST /text/embed {"queries"} -> {"vectors"},
+    POST /text/rerank {"query", "texts"} -> {"scores"}."""
+    base = base_url.rstrip("/")
+
+    def post(path: str, body: dict, key: str):
+        try:
+            res = _call(base + path, token, body, timeout, service="encoder service", hints=HTTP_HINTS)
+        except RemoteEncoderError as e:
+            raise CloudTextError(str(e)) from None
+        if not isinstance(res, dict) or key not in res:
+            raise CloudTextError(f"encoder service {path} returned no {key!r}: {str(res)[:200]}")
+        return res[key]
+
+    def embed(texts: list[str]) -> list[list[float]]:
+        return post("/text/embed", {"queries": list(texts)}, "vectors")
+
+    def rerank(query: str, texts: list[str]) -> list[float]:
+        return post("/text/rerank", {"query": query, "texts": list(texts)}, "scores")
+
+    return embed, rerank
+
+
+def text_models_from_env():
+    """HTTP service when ENCODER_URL/ENCODER_TOKEN are set, else Modal (looked up on first use)."""
+    http = http_encoder_target()
+    return http_text_models(*http) if http else modal_text_models()
+
 
 def modal_text_models(app: str = MODAL_APP, cls: str = MODAL_CLASS, lookup=None):
     """(embed, rerank) callables backed by the deployed Modal class; the class is looked up on first use.
@@ -181,7 +214,7 @@ class CloudTextSearch:
 
     def __init__(self, embedder=None, reranker=None, client=None, collection: str = COLLECTION):
         if embedder is None or reranker is None:
-            embed, rerank = modal_text_models()
+            embed, rerank = text_models_from_env()
             embedder, reranker = embedder or embed, reranker or rerank
         self.embed, self.rerank_fn, self.collection = embedder, reranker, collection
         self._client = client

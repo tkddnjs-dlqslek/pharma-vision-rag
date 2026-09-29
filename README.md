@@ -22,7 +22,7 @@
 
 ![Index build](아키텍처%20구조도%203.svg)
 
-The host LLM (claude.ai web, Claude Desktop or Claude Code) is the agent; the MCP server on Modal supplies text search (Qdrant Cloud + BGE-M3 + reranker), vision page search (Nemotron ColEmbed over a pooled int8 index) and page rendering. Every runtime component sits on a free tier; only the one-off index build ran on a paid GPU (about $1).
+The host LLM (claude.ai web, Claude Desktop or Claude Code) is the agent; the MCP server, self-hosted with `docker compose` (`services/`, any 16 GB CPU box; the earlier Modal deployment in `serverless/` still works with a payment method), supplies text search (Qdrant Cloud + BGE-M3 + reranker), vision page search (Nemotron ColEmbed over a pooled int8 index) and page rendering. Everything else sits on a free tier; only the one-off index build ran on a paid GPU (about $1).
 
 ## Results in one table
 
@@ -198,8 +198,18 @@ claude mcp add pharma-corpus --env PYTHONIOENCODING=utf-8 -- C:\Users\user\Deskt
 
 ### Remote (claude.ai web, any MCP client)
 
-`serverless/modal_mcp.py` serves the same `MCPServer` over streamable HTTP on Modal (CPU, scales to zero, no card
-needed), behind OAuth (claude.ai, Claude Desktop) or a static bearer token (Claude Code). The corpus, `text_chunks.jsonl` and the 2.4 GB pooled vision index live in the
+**Self-hosted (current path)**: `docker compose --profile serve up -d --build` builds two CPU-only containers from
+`services/`: `encoders` (Nemotron query encoder + BGE-M3 + bge-reranker over HTTP, about 12 GB resident) and `mcp`
+(the same `MCPServer` over streamable HTTP with the OAuth 2.1 login below, tokens in a JSON file on a volume). The
+`mcp` container downloads the corpus files from the HF dataset repo `DATA_REPO` (filled once by
+`scripts/30_upload_corpus_data.py`) and calls `encoders` over the compose network; expose port 8000 with a Cloudflare
+tunnel and set `MCP_PUBLIC_URL`. Steps, `.env` keys, smoke tests and honest latency numbers (a Nemotron encode is
+30 to 60 s on a small CPU) are in `services/deploy.md`. The dev box's stdio server uses the same encoder when
+`ENCODER_URL` and `ENCODER_TOKEN` are set (`VISION_ENCODER=auto` prefers RunPod keys, then this, then a Modal token).
+
+**Modal (alternative, needs a payment method since the free credits ran out)**: `serverless/modal_mcp.py` serves the
+same `MCPServer` over streamable HTTP on Modal (CPU, scales to zero), behind OAuth (claude.ai, Claude Desktop) or a
+static bearer token (Claude Code). The corpus, `text_chunks.jsonl` and the 2.4 GB pooled vision index live in the
 Modal Volume `pharma-corpus-data` at their repo-relative paths; `search_pages` calls the deployed `pharma-vision-encoder`
 app and `search_text` the `pharma-text-models` app plus Qdrant Cloud from inside Modal, so nothing runs on your machine.
 
@@ -257,7 +267,9 @@ Modal app logs (`modal app logs pharma-mcp`) for the request that failed.
    `scripts/26_pool_local_index.py` to the 2.4 GB `vision_index_pooled/` the server uses by default
    (`PHARMA_VISION_INDEX` overrides). A full scan takes about 3.4 s on a laptop CPU, 0.1 s with a document filter.
 2. **Query encoder**: the same Nemotron 3B model must embed the question. The dev box cannot hold it, so it runs
-   remotely. Cheapest path, no card required:
+   remotely. Current path: the `encoders` container from `services/` (`docker compose --profile serve up -d encoders`
+   on any 16 GB box, `services/deploy.md`), reached through `ENCODER_URL` + `ENCODER_TOKEN` in `.env`. Alternative on
+   Modal (needs a payment method now):
 
    ```bash
    pip install modal && modal token new                      # once, browser login
