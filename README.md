@@ -10,7 +10,17 @@
 
 ## Architecture
 
-![Service architecture](docs/architecture.svg)
+**1. Overall layout**
+
+![Overall layout](docs/architecture1.svg)
+
+**2. How one question is answered**
+
+![Question flow](docs/architecture2.svg)
+
+**3. Building the indexes (one-off)**
+
+![Index build](docs/architecture3.svg)
 
 The host LLM (claude.ai web, Claude Desktop or Claude Code) is the agent; the MCP server on Modal supplies text search (Qdrant Cloud + BGE-M3 + reranker), vision page search (Nemotron ColEmbed over a pooled int8 index) and page rendering. Every runtime component sits on a free tier; only the one-off index build ran on a paid GPU (about $1).
 
