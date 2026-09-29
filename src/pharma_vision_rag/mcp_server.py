@@ -11,10 +11,14 @@ modes/__init__ -> torch (76 s). stdout is the MCP channel, so nothing here may p
 from __future__ import annotations
 
 import base64
+import functools
 import importlib.util
+import inspect
 import json
 import os
 import sys
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -42,6 +46,8 @@ from pharma_vision_rag.retriever.vision_remote import RemoteEncoderError, encode
 VISION_INDEX_DIR = Path(os.environ.get("PHARMA_VISION_INDEX")
                         or ROOT / "data" / "embeddings" / "vision_index_pooled")
 MAX_IMAGE_BYTES = 1_000_000  # larger PNGs are re-encoded as JPEG
+# One JSON line per tool call (scripts/32_mcp_usage_report.py summarises it). Created on first write; never stdout.
+LOG_PATH = Path(os.environ.get("MCP_LOG_PATH") or ROOT / "data" / "logs" / "mcp_calls.jsonl")
 
 CORPUS_NOTE = (
     "The corpus is 27 English PDFs (1,709 pages): Sanofi quarterly results press releases and slide decks "
@@ -83,7 +89,49 @@ def _content(out: dict) -> str:
     return out["content"]
 
 
+def _log_record(tool: str, bound: dict, ms: float, result=None, error: str | None = None) -> dict:
+    """The JSON line for one call: arguments trimmed (query to 200 chars), top-3 (source, page) for the search tools."""
+    args = {k: (v[:200] if isinstance(v, str) else v) for k, v in bound.items() if v is not None}
+    rec = {"ts": datetime.now(UTC).isoformat(timespec="milliseconds"), "tool": tool, "args": args,
+           "ms": round(ms, 1), "ok": error is None}
+    if error is not None:
+        rec["error"] = error[:200]
+    elif tool.startswith("search_") and isinstance(result, str):
+        try:
+            rec["top"] = [[h.get("source"), h.get("page")] for h in json.loads(result)[:3]]
+        except (ValueError, AttributeError):
+            pass
+    return rec
+
+
+def _logged(fn):
+    """Append a _log_record line to LOG_PATH around each tool call; a logging failure never fails the tool."""
+    sig = inspect.signature(fn)
+
+    def write(rec: dict) -> None:
+        try:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with LOG_PATH.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except OSError as e:
+            print(f"mcp call log: {e}", file=sys.stderr)
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        bound = sig.bind_partial(*args, **kwargs).arguments
+        t = time.perf_counter()
+        try:
+            out = fn(*args, **kwargs)
+        except Exception as e:
+            write(_log_record(fn.__name__, bound, (time.perf_counter() - t) * 1000, error=f"{type(e).__name__}: {e}"))
+            raise
+        write(_log_record(fn.__name__, bound, (time.perf_counter() - t) * 1000, result=out))
+        return out
+    return wrapper
+
+
 @mcp.tool()
+@_logged
 def list_documents() -> str:
     """List all 27 documents: id, company, reporting period, kind (pr = press release, deck = results slides,
     20F = annual report) and page count. Call first to pick the document ids for the company and period asked about."""
@@ -96,6 +144,7 @@ Phrase the query in English (product names, metric names such as "net sales", "b
 Returns up to k passages (400 chars each) with document id, page and score. Pass document_ids from list_documents to
 restrict the search: the ranker does not know which period you mean, so filter by document when the period matters.
 Text extraction misses numbers drawn inside charts, so open_page the hit to verify figures.""")
+@_logged
 def search_text(query: str, document_ids: list[str] | None = None, k: int = 5) -> str:
     k = max(1, min(int(k), 20))
     if _dense is not None:
@@ -109,6 +158,7 @@ def search_text(query: str, document_ids: list[str] | None = None, k: int = 5) -
 @mcp.tool(description=f"""Visual page search: ranks whole page images against the query with a vision embedding
 model, which finds charts and slides that text search misses. {CORPUS_NOTE} Returns up to k (document id, page,
 score) hits; open_page them to read the content. If vision search is not installed, use search_text instead.""")
+@_logged
 def search_pages(query: str, document_ids: list[str] | None = None, k: int = 5) -> str:
     global _vision
     if _vision is None:
@@ -137,6 +187,7 @@ def search_pages(query: str, document_ids: list[str] | None = None, k: int = 5) 
 
 
 @mcp.tool()
+@_logged
 def open_page(document_id: str, page: int) -> list:
     """Render one page (1-based) of a document as an image so you can read it directly, including chart
     labels and table cells. Always open the page before quoting a number from it, and cite document_id and page."""
@@ -155,6 +206,7 @@ def open_page(document_id: str, page: int) -> list:
 
 
 @mcp.tool()
+@_logged
 def calculate(expression: str) -> str:
     """Evaluate arithmetic (numbers, + - * / % ** and parentheses only), e.g. "(3832-3303)/3303*100".
     Use it for every increase, decrease, ratio or percentage change instead of computing in your head."""

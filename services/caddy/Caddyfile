@@ -1,0 +1,8 @@
+# Automatic HTTPS (Let's Encrypt) for the MCP container. PUBLIC_HOST comes from the repo-root .env through
+# docker-compose.yml, e.g. 3.35.10.20.sslip.io (sslip.io resolves <ip>.sslip.io to <ip>, so no DNS to set up).
+# Let's Encrypt limits: 5 certificates per exact hostname per week, 50 per registered domain (sslip.io) per week;
+# a relaunch with a new public IP is a new hostname and a new certificate, so keep launches few.
+{$PUBLIC_HOST} {
+	reverse_proxy mcp:8000
+	# ponytail: encoders are reachable only inside the compose network; add a /encoders/* handle_path if the dev PC needs them
+}

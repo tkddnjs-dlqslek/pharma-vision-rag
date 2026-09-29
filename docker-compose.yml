@@ -28,8 +28,7 @@ services:
     container_name: pharma-rag-encoders
     profiles: [serve]
     restart: unless-stopped
-    ports:
-      - "7860:7860"
+    # no host port: only mcp (compose network) talks to it. Debug: docker compose exec encoders curl localhost:7860/health
     environment:
       ENCODER_TOKEN: ${ENCODER_TOKEN:?set ENCODER_TOKEN in .env}
       # the three models are public: no HF_TOKEN here (a placeholder token in .env would break the download)
@@ -50,13 +49,13 @@ services:
     profiles: [serve]
     restart: unless-stopped
     depends_on: [encoders]
-    ports:
-      - "8000:8000"
+    # no host port: caddy proxies https://$PUBLIC_HOST to it; health is https://$PUBLIC_HOST/health
     environment:
       MCP_TOKEN: ${MCP_TOKEN:?set MCP_TOKEN in .env}
       MCP_USER: ${MCP_USER:-}
       MCP_PASSWORD: ${MCP_PASSWORD:-}
-      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-http://localhost:8000}
+      MCP_PUBLIC_URL: https://${PUBLIC_HOST:?set PUBLIC_HOST in .env, e.g. <public-ip>.sslip.io}
+      MCP_LOG_PATH: /data/logs/mcp_calls.jsonl   # one JSON line per tool call, in the corpus_data volume (scripts/32)
       ENCODER_URL: http://encoders:7860       # compose network, not the public address
       ENCODER_TOKEN: ${ENCODER_TOKEN:?set ENCODER_TOKEN in .env}
       QDRANT_CLOUD_URL: ${QDRANT_CLOUD_URL:-}
@@ -64,7 +63,24 @@ services:
       DATA_REPO: ${DATA_REPO:-sangwongim922/pharma-corpus-data}
       HF_TOKEN: ${HF_TOKEN:-}                 # only needed when DATA_REPO is private; must be a real token or empty
     volumes:
-      - corpus_data:/data       # 2.5 GB corpus download + auth.json (OAuth clients and tokens)
+      - corpus_data:/data       # 2.5 GB corpus download + auth.json (OAuth clients and tokens) + logs/
+
+  # Automatic HTTPS in front of mcp (services/caddy/Caddyfile). PUBLIC_HOST=<public-ip>.sslip.io on AWS (scripts/31).
+  caddy:
+    image: caddy:2-alpine
+    container_name: pharma-rag-caddy
+    profiles: [serve]
+    restart: unless-stopped
+    depends_on: [mcp]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST in .env, e.g. <public-ip>.sslip.io}
+    volumes:
+      - ./services/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # certificates and ACME account: keep it, or a relaunch re-issues against the LE rate limit
+      - caddy_config:/config
 
   # ─── Langfuse (self-host, optional) ─────────────────────────────────────
   # Default path: use Langfuse Cloud (set LANGFUSE_BASE_URL in .env).
@@ -101,6 +117,8 @@ volumes:
   qdrant_storage:
   hf_cache:
   corpus_data:
+  caddy_data:
+  caddy_config:
 
 networks:
   default:

@@ -54,3 +54,7 @@ ruff>=0.7.0
 # sentencepiece is required by many HF tokenizers
 sentencepiece==0.2.0           # 0.2.1+ segfaults on import in the Windows venv (2026-09-16)
 modal>=1.5,<2
+
+# ─── AWS one-month experiment (scripts/31_aws_deploy.py) ───
+boto3>=1.35.0                  # EC2 provisioning
+paramiko>=3.4.0                # SSH deploy to the box
