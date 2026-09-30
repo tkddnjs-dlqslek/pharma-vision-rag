@@ -87,7 +87,14 @@ API 키와 크레딧이 없어서 **답변 생성과 채점은 Anthropic API 대
    (b) dense 텍스트 검색: `retriever/text_cloud.py` + `scripts/29_upload_text_vectors.py`. Qdrant Cloud 무료 티어에 15,182 벡터 업로드 완료,
    `search_text`가 BGE-M3 + 리랭커(Modal)로 동작하고 실패 시 BM25로 강등. 키는 `.env`의 `QDRANT_CLOUD_URL`, `QDRANT_CLOUD_API_KEY`
    (**키가 채팅에 노출된 적 있어 교체 권장**). (c) `docs/USE_CASES.md` 사용자별 예시 질문. 상세는 계획서 0절 "MCP 서비스 구성".
-16. **남은 선택 과제**: 실제 API 경로 파일럿(키 필요), 문구 바뀐 4문항의 답변 재생성(선택), Claude Desktop과 웹에서 실사용 확인.
+16. **[2026-09-30] 호스팅 결정.** Modal 무료는 월 $1이라 소진되어 정지, HF Spaces는 Docker Space에 PRO 필요(402), AWS Free plan은 8GB 이하
+   인스턴스만 허용. 그래서 `services/`(docker compose: encoders, mcp, caddy HTTPS)와 `scripts/31_aws_deploy.py`(up/deploy/status/stop/start/logs/down)를
+   준비해 둠. 코퍼스 데이터는 HF dataset `sangwongim922/pharma-corpus-data`(비공개)에 업로드 완료. **사용자가 요청하면 AWS 배포 진행**:
+   조건은 Paid plan(크레딧 $100 차감), t4g.xlarge 서울, 하루 약 12시간 운영(월 약 $58, 크레딧 안). `.env`에 `AWS_ACCESS_KEY_ID`,
+   `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION=ap-northeast-2`가 들어오면 `31 up` → `31 deploy` 순서. 절차는 `services/deploy.md` Ⅲ절.
+   포폴 서술은 사실대로("개인 AWS 계정, 신규 크레딧으로 한 달 운영"). 회사 인프라를 썼다고 쓰지 않기로 함.
+17. **남은 선택 과제**: 실제 API 경로 파일럿(키 필요), 문구 바뀐 4문항의 답변 재생성(선택), Claude Desktop과 웹에서 실사용 확인.
+   HF 토큰과 Qdrant 키가 채팅에 노출됨: 교체 권장.
 
 **평가셋 결함 상태 (질문 문구를 바꾸면 RunPod에서 질의 임베딩 재계산 필요, 약 $2)**
 - A02, A01, B08: 해결(렌더로 확인해 gold와 기준 정답 반영). D03: 2026-09-28 회사명 추가로 해결(28번 스크립트).
